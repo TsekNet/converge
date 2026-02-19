@@ -1,0 +1,52 @@
+version: 2
+
+project_name: converge
+
+before:
+  hooks:
+    - go mod tidy
+    - go vet ./...
+    - go test ./... -count=1
+
+builds:
+  - main: ./cmd/converge
+    binary: converge
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: linux
+        goarch: arm64
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/TsekNet/converge/internal/version.Version={{.Version}}
+      - -X github.com/TsekNet/converge/internal/version.Commit={{.Commit}}
+      - -X github.com/TsekNet/converge/internal/version.Date={{.Date}}
+
+archives:
+  - format: binary
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - "^style:"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-dev"
