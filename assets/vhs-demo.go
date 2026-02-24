@@ -1,0 +1,95 @@
+//go:build ignore
+
+// vhs-demo produces representative converge plan output for the VHS demo recording.
+// Uses the output package with mock extensions. Run via: go run ./assets/vhs-demo.go workstation
+package main
+
+import (
+	"context"
+	"flag"
+	"time"
+
+	"github.com/TsekNet/converge/extensions"
+	"github.com/TsekNet/converge/internal/output"
+)
+
+type stubExt struct {
+	id   string
+	name string
+}
+
+func (s *stubExt) ID() string                                    { return s.id }
+func (s *stubExt) String() string                                { return s.name }
+func (s *stubExt) Check(_ context.Context) (*extensions.State, error) { return nil, nil }
+func (s *stubExt) Apply(_ context.Context) (*extensions.Result, error) { return nil, nil }
+
+var _ extensions.Extension = (*stubExt)(nil)
+
+func main() {
+	flag.Parse()
+	blueprint := "workstation"
+	// Accept "converge plan <blueprint>" style args
+	args := flag.Args()
+	if len(args) >= 2 && args[0] == "plan" {
+		blueprint = args[1]
+	} else if len(args) >= 1 && args[0] != "plan" {
+		blueprint = args[0]
+	}
+
+	p := output.NewTerminalPrinter()
+	p.SetMaxNameLen(24)
+
+	// Banner + header
+	p.Banner("0.0.1")
+	p.BlueprintHeader(blueprint)
+
+	// Plan results: mix of in-sync and pending changes
+	resources := []struct {
+		ext   extensions.Extension
+		state *extensions.State
+	}{
+		{&stubExt{"file:/etc/motd", "File /etc/motd"}, &extensions.State{
+			InSync: false,
+			Changes: []extensions.Change{
+				{Property: "content", From: "(absent)", To: "Managed by Converge", Action: "add"},
+				{Property: "mode", To: "0644", Action: "add"},
+			},
+		}},
+		{&stubExt{"package:git", "Package git"}, &extensions.State{InSync: true}},
+		{&stubExt{"package:curl", "Package curl"}, &extensions.State{InSync: true}},
+		{&stubExt{"package:neovim", "Package neovim"}, &extensions.State{
+			InSync: false,
+			Changes: []extensions.Change{
+				{Property: "state", From: "absent", To: "present", Action: "add"},
+			},
+		}},
+		{&stubExt{"service:sshd", "Service sshd"}, &extensions.State{
+			InSync: false,
+			Changes: []extensions.Change{
+				{Property: "enable", To: "true", Action: "add"},
+				{Property: "state", From: "stopped", To: "running", Action: "modify"},
+			},
+		}},
+		{&stubExt{"user:devuser", "User devuser"}, &extensions.State{
+			InSync: false,
+			Changes: []extensions.Change{
+				{Property: "groups", To: "[sudo]", Action: "add"},
+				{Property: "shell", To: "/bin/bash", Action: "add"},
+			},
+		}},
+	}
+
+	for i, r := range resources {
+		p.ResourceChecking(r.ext, i+1, len(resources))
+		time.Sleep(80 * time.Millisecond)
+		p.PlanResult(r.ext, r.state)
+	}
+
+	pending := 0
+	for _, r := range resources {
+		if !r.state.InSync {
+			pending++
+		}
+	}
+	p.PlanSummary(pending, len(resources)-pending, len(resources))
+}

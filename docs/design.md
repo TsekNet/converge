@@ -134,6 +134,8 @@ converge/
 │   ├── windows.go
 │   └── linux_server.go
 │
+├── assets/                  # Logo, demo GIF, vhs-demo.go, demo.tape (see assets/README.md)
+│
 └── docs/
 ```
 
@@ -224,6 +226,14 @@ All CLI output goes through a `Printer` interface with three implementations:
 | **terminal** | ANSI color, Unicode symbols, animated spinner, progress counter `[3/6]`. Default. |
 | **serial** | ASCII-only, no escape codes, no spinner. For serial consoles, GCP, CI logs. |
 | **json** | Full change details per resource. Machine-readable. |
+
+### Demo GIF
+
+`assets/vhs-demo.go` renders representative plan output for the README demo GIF. See [assets/README.md](../assets/README.md) for prerequisites and setup. Regenerate:
+
+```bash
+vhs assets/demo.tape
+```
 
 ### Logging
 

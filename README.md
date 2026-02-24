@@ -14,7 +14,7 @@ Compile all your linux/mac/windows configurations into a single binary. Inspired
 
 <div align="center">
 
-![converge plan](assets/screenshot.svg)
+![converge plan](assets/demo.gif)
 
 </div>
 
