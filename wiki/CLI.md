@@ -1,8 +1,10 @@
 # CLI Reference
 
-> [Design](design.md) · [Guide](guide.md) · [CLI](cli.md) · [Extending](extending.md) · [README](../README.md)
+**[← Wiki Home](Home)** · [Design](Design) · [Guide](Guide) · [Extending](Extending)
 
 Command-line interface for the Converge configuration management tool.
+
+---
 
 ## Commands
 
@@ -59,6 +61,8 @@ converge v0.0.1
   os:     linux/amd64
 ```
 
+---
+
 ## Global Flags
 
 | Flag | Short | Default | Description |
@@ -77,6 +81,8 @@ converge v0.0.1
 | `serial` | ASCII-only, no color, no escape codes, no spinners. For serial consoles, GCP, CI. |
 | `json` | JSON object with full change details per resource. Machine-readable. |
 
+---
+
 ## Exit Codes
 
 By default, converge exits 0 on success (including changes applied and plan pending) and 1 on any failure. Pass `--detailed-exit-codes` for granular codes:
@@ -93,6 +99,8 @@ By default, converge exits 0 on success (including changes applied and plan pend
 | 11 | Blueprint not found |
 | 12 | Platform not supported |
 
+---
+
 ## Environment Variables
 
 | Variable | Description |
@@ -100,11 +108,15 @@ By default, converge exits 0 on success (including changes applied and plan pend
 | `NO_COLOR` | Disables color output in terminal mode. Follows the [no-color standard](https://no-color.org/). |
 | `CONVERGE_OUT` | Default output format. Overridden by `--out`. |
 
+---
+
 ## Features
 
 - **Parallel execution:** Use `--parallel N` to run up to N resources concurrently. Default is sequential.
 - **Per-resource timeout:** `--timeout 2m` sets a deadline for each resource's Check/Apply cycle.
 - **Critical resource halting:** Resources with `Critical: true` (default) halt the run on failure. Set `Critical: false` on best-effort resources to log and continue.
+
+---
 
 ## Examples
 

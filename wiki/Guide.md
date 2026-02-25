@@ -1,14 +1,18 @@
 # Guide
 
-> [Design](design.md) · [Guide](guide.md) · [CLI](cli.md) · [Extending](extending.md) · [README](../README.md)
+**[← Wiki Home](Home)** · [Design](Design) · [CLI](CLI) · [Extending](Extending)
 
 How to write, register, compose, and test Converge blueprints, plus a complete reference for every built-in resource type.
+
+---
 
 ## What Is a Blueprint
 
 A blueprint is a Go function with the signature `func(r *dsl.Run)`. Inside the function, you call resource methods on `r` to declare what the system should look like. The function is registered by name with `app.Register()` and compiled into the binary.
 
 Blueprints don't *do* anything directly. They declare intent. The engine diffs current state vs. declared state and applies only what's needed.
+
+---
 
 ## Writing a Blueprint
 
@@ -36,6 +40,8 @@ func Blueprint(r *dsl.Run) {
 
 This declares three things: a file with specific content and permissions, an installed package, and a running enabled service.
 
+---
+
 ## Registering in main.go
 
 ```go
@@ -61,6 +67,8 @@ converge apply myblueprint      # apply the blueprint
 ```
 
 You can register as many blueprints as you want. Each becomes a subcommand target.
+
+---
 
 ## Platform-Conditional Logic
 
@@ -88,6 +96,8 @@ func Blueprint(r *dsl.Run) {
 
 `r.Platform()` returns a `platform.Info` struct with `OS`, `Distro`, `Arch`, `PkgManager`, and `InitSystem`.
 
+---
+
 ## Blueprint Composition
 
 Split large blueprints and compose with `r.Include()`:
@@ -101,6 +111,8 @@ func Blueprint(r *dsl.Run) {
 ```
 
 `Include` calls another registered blueprint by name, injecting its resources into the current Run.
+
+---
 
 ## Testing Blueprints
 

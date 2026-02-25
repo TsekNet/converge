@@ -1,8 +1,10 @@
 # Adding a New Extension
 
-> [Design](design.md) · [Guide](guide.md) · [CLI](cli.md) · [Extending](extending.md) · [README](../README.md)
+**[← Wiki Home](Home)** · [Design](Design) · [Guide](Guide) · [CLI](CLI)
 
 This guide walks through adding a new extension to Converge. Extensions are everything that touches the OS: package managers, init systems, file operations, etc.
+
+---
 
 ## Extension Interface
 
@@ -20,6 +22,8 @@ type Extension interface {
 - `Check()` reads current state and compares to desired. No root needed.
 - `Apply()` makes changes. Requires root.
 - `ID()` returns a unique identifier like `file:/etc/motd` or `package:git`.
+
+---
 
 ## Example: Adding a New Package Manager (dnf)
 
@@ -101,6 +105,8 @@ func TestDnfManager_Name(t *testing.T) {
 - One file + one test file + factory registration
 - No changes to `internal/` required
 
+---
+
 ## Sub-Interfaces
 
 Some extensions have sub-interfaces for platform-specific implementations:
@@ -111,6 +117,8 @@ Some extensions have sub-interfaces for platform-specific implementations:
 | `service/` | `ServiceManager` | systemd, launchd, windows, (add: openrc, runit) |
 
 To add a new package manager or init system, implement the sub-interface and register it. The engine doesn't change.
+
+---
 
 ## Directory Structure
 
@@ -125,6 +133,8 @@ extensions/
 ├── user/                 # User/group management
 └── registry/             # Windows registry
 ```
+
+---
 
 ## Platform-Specific Extensions (Build Tags)
 
@@ -172,6 +182,8 @@ func TestUser_Apply(t *testing.T) {
     // test useradd logic
 }
 ```
+
+---
 
 ## Tips
 

@@ -71,12 +71,7 @@ converge plan my-server --detailed-exit-codes  # granular exit codes for CI
 
 ## Documentation
 
-| Doc | What it covers |
-|-----|----------------|
-| **[Design](docs/design.md)** | Philosophy, motivation, architecture, package layout, engine flow |
-| **[Guide](docs/guide.md)** | How to write blueprints + built-in resource reference |
-| **[CLI](docs/cli.md)** | Commands, flags, output formats, exit codes |
-| **[Extending](docs/extending.md)** | How to add a new extension, platform-specific build tags |
+**[📚 Wiki](https://github.com/TsekNet/converge/wiki)** — Design, Guide, CLI, Extending. Wiki source lives in `wiki/` in this repo.
 
 Built-in blueprints: `converge list` shows available blueprints (`workstation`, `linux`, `darwin`, `windows`, `linux_server`).
 

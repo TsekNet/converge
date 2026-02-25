@@ -1,8 +1,10 @@
 # Design
 
-> [Design](design.md) · [Guide](guide.md) · [CLI](cli.md) · [Extending](extending.md) · [README](../README.md)
+**[← Wiki Home](Home)** · [Guide](Guide) · [CLI](CLI) · [Extending](Extending)
 
 Converge is a Go-based configuration management tool that compiles to a single static binary per platform. This document covers the motivation, design philosophy, and internal architecture.
+
+---
 
 ## Problem Statement
 
@@ -24,6 +26,8 @@ The problems compound at scale:
 - **Terraform solves the wrong problem.** Excellent for provisioning infrastructure but wrong for endpoint configuration management. It requires state files and has no concept of converging local system state.
 - **Cross-tool drift.** When Chef manages the same file in two cookbooks, the last recipe to run wins. No conflict detection.
 
+---
+
 ## Solution
 
 One `converge` binary per OS/arch. No Ruby, no Python, no JVM, no gem install, no pip, no apt. The binary IS the tool.
@@ -36,6 +40,8 @@ One `converge` binary per OS/arch. No Ruby, no Python, no JVM, no gem install, n
 | Blueprints are Go packages | Static types, compile-time errors, `go test`, IDE autocompletion. |
 | Convergent, no state file | Every resource checks live system state on every run. No state file to corrupt. |
 | Cross-platform from one codebase | Go build tags handle platform-specific implementations. |
+
+---
 
 ## Design Philosophy
 
@@ -60,6 +66,8 @@ The target is 10-year maintainability:
 
 One error handling pattern (the `Critical` flag). One way to include shared logic (`Include()`). One way to template files. Consistency at 500K endpoints matters more than flexibility.
 
+---
+
 ## Security Model
 
 | Mode | Privilege | Network | Mutations |
@@ -69,6 +77,8 @@ One error handling pattern (the `Critical` flag). One way to include shared logi
 
 - **No network by default.** Zero network calls during execution. All configuration is compiled in or read from local disk.
 - **No secrets in code.** Secrets come from environment variables via `EnvRequired()`, which fails the run if the variable is unset.
+
+---
 
 ## Convergent Model
 
@@ -229,7 +239,7 @@ All CLI output goes through a `Printer` interface with three implementations:
 
 ### Demo GIF
 
-`assets/vhs-demo.go` renders representative plan output for the README demo GIF. See [assets/README.md](../assets/README.md) for prerequisites and setup. Regenerate:
+`assets/vhs-demo.go` renders representative plan output for the README demo GIF. See [assets/README.md](https://github.com/TsekNet/converge/blob/main/assets/README.md) for prerequisites and setup. Regenerate:
 
 ```bash
 vhs assets/demo.tape
@@ -243,6 +253,8 @@ Uses [google/deck](https://github.com/google/deck) for structured logging:
 - **Windows**: Windows Event Log (Event Viewer > Application)
 - **stderr**: only with `--verbose` flag
 
+---
+
 ## Lessons from Chef
 
 These are real bugs, outages, and hours lost managing endpoints with Chef at scale.
@@ -255,6 +267,8 @@ These are real bugs, outages, and hours lost managing endpoints with Chef at sca
 | Inconsistent error handling | Some resources raise, some warn, some silently return | `Critical` flag: explicit per resource |
 | Monolithic recipes | 573-line recipes, LWRP boilerplate discourages decomposition | `Include()` is a Go function call, zero boilerplate |
 | No real unit testing | ChefSpec tests collections, not behavior; Test Kitchen takes 45 min | `go test` with mock Run, subsecond feedback |
+
+---
 
 ## What Converge Is Not
 
