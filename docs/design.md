@@ -157,7 +157,7 @@ converge/
 │   └── cis/                 # CIS L1 benchmark blueprints
 │       ├── cis_windows.go   # CIS Windows 11 Enterprise L1
 │       ├── cis_linux.go     # CIS Ubuntu 24.04 LTS L1 Server
-│       └── cis_darwin.go    # CIS macOS 15 Sequoia L1
+│       └── cis_darwin.go    # CIS macOS L1
 │
 ├── assets/                  # Logo, demo GIF, vhs-demo.go, demo.tape
 │

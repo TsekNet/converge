@@ -51,7 +51,7 @@ Built-in blueprints vary by platform:
 | `darwin` | macOS | macOS-specific defaults |
 | `windows` | Windows | Windows-specific defaults |
 | `linux_cis` | Linux | CIS Ubuntu 24.04 LTS L1 Server |
-| `darwin_cis` | macOS | CIS macOS 15 Sequoia L1 |
+| `darwin_cis` | macOS | CIS macOS L1 |
 | `windows_cis` | Windows | CIS Windows 11 Enterprise L1 |
 
 ### converge version

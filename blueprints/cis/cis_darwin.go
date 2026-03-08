@@ -4,7 +4,7 @@ package cis
 
 import "github.com/TsekNet/converge/dsl"
 
-// DarwinCIS enforces CIS macOS 15 Sequoia v2.0.0 L1 benchmark settings.
+// DarwinCIS enforces CIS macOS L1 benchmark settings.
 func DarwinCIS(r *dsl.Run) {
 	cisUpdates(r)
 	cisFirewall(r)
