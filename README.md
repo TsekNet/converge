@@ -88,7 +88,7 @@ converge plan my-server --detailed-exit-codes  # granular exit codes for CI
 | [Design](docs/design.md) | Philosophy, architecture, engine flow, native API strategy |
 | [Guide](docs/guide.md) | Blueprint writing, composition, testing, full resource reference |
 | [CLI](docs/cli.md) | Commands, flags, exit codes, output formats |
-| [Extending](docs/extending.md) | Adding new extensions and platform-specific resources |
+| [Extensions](docs/extending.md) | Adding new extensions and platform-specific resources |
 | [Blueprints](blueprints/) | Built-in blueprints including [CIS benchmarks](blueprints/cis/) |
 
 ## Contributing
