@@ -1,10 +1,6 @@
 package registry
 
-import (
-	"context"
-	"runtime"
-	"testing"
-)
+import "testing"
 
 func TestRegistry_IDAndString(t *testing.T) {
 	tests := []struct {
@@ -46,34 +42,4 @@ func TestRegistry_DefaultState(t *testing.T) {
 	if r.State != "present" {
 		t.Errorf("default State = %q, want %q", r.State, "present")
 	}
-}
-
-func TestRegistry_StubBehavior(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("stub tests are for non-Windows")
-	}
-
-	ctx := context.Background()
-	r := New(`HKLM\SOFTWARE\Test`)
-	r.Value = "TestVal"
-
-	t.Run("check returns in sync", func(t *testing.T) {
-		state, err := r.Check(ctx)
-		if err != nil {
-			t.Fatalf("Check() error = %v", err)
-		}
-		if !state.InSync {
-			t.Error("stub Check should return InSync=true")
-		}
-	})
-
-	t.Run("apply returns not changed", func(t *testing.T) {
-		result, err := r.Apply(ctx)
-		if err != nil {
-			t.Fatalf("Apply() error = %v", err)
-		}
-		if result.Changed {
-			t.Error("stub Apply should return Changed=false")
-		}
-	})
 }

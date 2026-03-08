@@ -81,8 +81,6 @@ func TestRun_ResourceIDs(t *testing.T) {
 	run.Service("sshd", ServiceOpts{State: Running})
 	run.Exec("test", ExecOpts{Command: "echo hello"})
 	run.User("dev", UserOpts{Shell: "/bin/bash"})
-	run.Registry(`HKLM\Test`, RegistryOpts{Value: "test"})
-
 	tests := []struct {
 		index   int
 		wantID  string
@@ -93,7 +91,6 @@ func TestRun_ResourceIDs(t *testing.T) {
 		{2, "service:sshd", "Service sshd"},
 		{3, "exec:test", "Exec test"},
 		{4, "user:dev", "User dev"},
-		{5, `registry:HKLM\Test\test`, `Registry HKLM\Test\test`},
 	}
 
 	resources := run.Resources()

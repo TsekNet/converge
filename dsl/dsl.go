@@ -85,3 +85,17 @@ type AuditPolicyOpts struct {
 	Failure     bool
 	Critical    bool
 }
+
+type SysctlOpts struct {
+	Value    string
+	Persist  bool
+	Critical bool
+}
+
+type PlistOpts struct {
+	Key      string
+	Value    any
+	Type     string // "bool", "int", "float", "string"
+	Host     bool   // true = /Library/Preferences (system-wide), false = ~/Library/Preferences
+	Critical bool
+}

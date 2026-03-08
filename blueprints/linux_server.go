@@ -4,8 +4,10 @@ import "github.com/TsekNet/converge/dsl"
 
 // LinuxServer declares desired state for a hardened Linux server.
 func LinuxServer(r *dsl.Run) {
+	// Pull in the base Linux blueprint first, then layer server-specific hardening.
 	r.Include("linux")
 
+	// Drop-in config under sshd_config.d/ so we don't clobber the distro's defaults.
 	r.File("/etc/ssh/sshd_config.d/converge.conf", dsl.FileOpts{
 		Content: "PermitRootLogin no\n" +
 			"PasswordAuthentication no\n" +

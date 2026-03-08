@@ -4,6 +4,7 @@ import "github.com/TsekNet/converge/dsl"
 
 // Workstation declares desired state for a developer workstation.
 func Workstation(r *dsl.Run) {
+	// This is a minimal example blueprint -- customize it for your team's dev environment.
 	r.File("/etc/motd", dsl.FileOpts{
 		Content: "Managed by Converge\n",
 		Mode:    0644,

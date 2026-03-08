@@ -60,11 +60,11 @@ converge plan my-server --detailed-exit-codes  # granular exit codes for CI
 
 | Feature | Description |
 |---------|-------------|
-| **Compiled blueprints** | Go code — catch misconfigurations at build time, not at 2 AM |
+| **Compiled blueprints** | Go code: catch misconfigurations at build time, not at 2 AM |
 | **Zero dependencies** | Single static binary, no Ruby/Python/JVM runtime |
 | **Cross-platform** | Linux, macOS, Windows from one codebase with build tags |
-| **Native Win32 APIs** | Registry, SCM, Local Security Policy, Advanced Audit Policy — no shelling out |
-| **CIS benchmark** | Built-in `windows_cis` blueprint covering ~242 CIS Windows 11 Enterprise L1 settings |
+| **Native OS APIs** | Win32 registry/SCM/LSA, Linux sysctl via `/proc/sys`, macOS plist — no shelling out |
+| **CIS benchmarks** | Built-in CIS L1 blueprints for [Windows 11](blueprints/cis/cis_windows.go), [Ubuntu 24.04](blueprints/cis/cis_linux.go), and [macOS 15](blueprints/cis/cis_darwin.go) |
 | **Plan / Apply** | Dry-run any blueprint before making changes |
 | **Parallel execution** | Concurrent resource application with configurable parallelism |
 | **Extensible** | Implement the `Extension` interface to add new resource types |
@@ -89,7 +89,7 @@ converge plan my-server --detailed-exit-codes  # granular exit codes for CI
 | [Guide](docs/guide.md) | Blueprint writing, resource reference |
 | [CLI](docs/cli.md) | Commands, flags, exit codes |
 | [Extending](docs/extending.md) | Adding new extensions |
-| [Blueprints](blueprints/) | Built-in blueprints (`workstation`, `windows`, `windows_cis`) |
+| [Blueprints](blueprints/) | Built-in blueprints |
 
 ## Contributing
 

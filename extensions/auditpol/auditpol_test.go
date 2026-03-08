@@ -1,10 +1,6 @@
 package auditpol
 
-import (
-	"context"
-	"runtime"
-	"testing"
-)
+import "testing"
 
 func TestAuditPolicy_IDAndString(t *testing.T) {
 	tests := []struct {
@@ -51,33 +47,4 @@ func TestAuditPolicy_New(t *testing.T) {
 	if a.Failure {
 		t.Error("Failure should be false")
 	}
-}
-
-func TestAuditPolicy_StubBehavior(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("stub tests are for non-Windows")
-	}
-
-	ctx := context.Background()
-	a := New("Logon", true, true)
-
-	t.Run("check returns in sync", func(t *testing.T) {
-		state, err := a.Check(ctx)
-		if err != nil {
-			t.Fatalf("Check() error = %v", err)
-		}
-		if !state.InSync {
-			t.Error("stub Check should return InSync=true")
-		}
-	})
-
-	t.Run("apply returns not changed", func(t *testing.T) {
-		result, err := a.Apply(ctx)
-		if err != nil {
-			t.Fatalf("Apply() error = %v", err)
-		}
-		if result.Changed {
-			t.Error("stub Apply should return Changed=false")
-		}
-	})
 }

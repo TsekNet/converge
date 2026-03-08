@@ -21,36 +21,19 @@ var (
 	procNetApiBufferFree = modNetapi32.NewProc("NetApiBufferFree")
 )
 
-// USER_MODALS_INFO_0 maps to the Win32 struct for password policy (level 0).
 type userModalsInfo0 struct {
-	MinPasswdLen  uint32
-	MaxPasswdAge  uint32
-	MinPasswdAge  uint32
-	ForceLogoff   uint32
+	MinPasswdLen    uint32
+	MaxPasswdAge    uint32
+	MinPasswdAge    uint32
+	ForceLogoff     uint32
 	PasswordHistLen uint32
 }
 
-// USER_MODALS_INFO_3 maps to the Win32 struct for account lockout (level 3).
 type userModalsInfo3 struct {
 	LockoutDuration    uint32
 	LockoutObservation uint32
 	LockoutThreshold   uint32
 }
-
-type SecurityPolicy struct {
-	Category string // "password" or "lockout"
-	Key      string // field name, e.g. "MinimumPasswordLength"
-	Value    string // desired value as string
-	Critical bool
-}
-
-func New(category, key, value string) *SecurityPolicy {
-	return &SecurityPolicy{Category: category, Key: key, Value: value}
-}
-
-func (s *SecurityPolicy) ID() string     { return fmt.Sprintf("secpol:%s:%s", s.Category, s.Key) }
-func (s *SecurityPolicy) String() string { return fmt.Sprintf("SecurityPolicy %s/%s", s.Category, s.Key) }
-func (s *SecurityPolicy) IsCritical() bool { return s.Critical }
 
 func (s *SecurityPolicy) Check(_ context.Context) (*extensions.State, error) {
 	current, err := s.readCurrent()

@@ -23,7 +23,6 @@ func newApp() *dsl.App {
 	a.Register("linux", "Common Linux system baseline", blueprints.Linux)
 	a.Register("linux_server", "Hardened Linux server", blueprints.LinuxServer)
 	a.Register("darwin", "macOS workstation", blueprints.Darwin)
-	a.Register("windows", "Windows workstation", blueprints.Windows)
-	a.Register("windows_cis", "CIS Windows 11 Enterprise L1 benchmark", blueprints.WindowsCIS)
+	registerPlatformBlueprints(a)
 	return a
 }

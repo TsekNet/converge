@@ -9,6 +9,7 @@ func Linux(r *dsl.Run) {
 		Mode:    0644,
 	})
 
+	// Drop a sysctl snippet instead of editing the main sysctl.conf.
 	r.File("/etc/sysctl.d/99-converge.conf", dsl.FileOpts{
 		Content: "net.ipv4.ip_forward = 0\n" +
 			"net.ipv4.conf.all.send_redirects = 0\n" +

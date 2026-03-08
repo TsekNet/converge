@@ -21,10 +21,10 @@ var (
 )
 
 const (
-	auditingSuccess          = 0x1
-	auditingFailure          = 0x2
+	auditingSuccess           = 0x1
+	auditingFailure           = 0x2
 	auditingSuccessAndFailure = auditingSuccess | auditingFailure
-	auditingNone             = 0x0
+	auditingNone              = 0x0
 )
 
 type auditPolicyInformation struct {
@@ -32,21 +32,6 @@ type auditPolicyInformation struct {
 	AuditingInformation  uint32
 	AuditCategoryGuid    windows.GUID
 }
-
-type AuditPolicy struct {
-	Subcategory string
-	Success     bool
-	Failure     bool
-	Critical    bool
-}
-
-func New(subcategory string, success, failure bool) *AuditPolicy {
-	return &AuditPolicy{Subcategory: subcategory, Success: success, Failure: failure}
-}
-
-func (a *AuditPolicy) ID() string     { return fmt.Sprintf("auditpol:%s", a.Subcategory) }
-func (a *AuditPolicy) String() string { return fmt.Sprintf("AuditPolicy %s", a.Subcategory) }
-func (a *AuditPolicy) IsCritical() bool { return a.Critical }
 
 func (a *AuditPolicy) Check(_ context.Context) (*extensions.State, error) {
 	guid, ok := subcategoryGUIDs[strings.ToLower(a.Subcategory)]

@@ -1,3 +1,5 @@
+//go:build windows
+
 package blueprints
 
 import "github.com/TsekNet/converge/dsl"
@@ -8,6 +10,7 @@ func Windows(r *dsl.Run) {
 		r.Package(pkg, dsl.PackageOpts{State: dsl.Present})
 	}
 
+	// Show file extensions and disable telemetry via registry.
 	r.Registry(`HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced`, dsl.RegistryOpts{
 		Value: "HideFileExt",
 		Type:  "dword",

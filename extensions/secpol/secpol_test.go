@@ -1,10 +1,6 @@
 package secpol
 
-import (
-	"context"
-	"runtime"
-	"testing"
-)
+import "testing"
 
 func TestSecurityPolicy_IDAndString(t *testing.T) {
 	tests := []struct {
@@ -50,33 +46,4 @@ func TestSecurityPolicy_New(t *testing.T) {
 	if s.Value != "5" {
 		t.Errorf("Value = %q, want %q", s.Value, "5")
 	}
-}
-
-func TestSecurityPolicy_StubBehavior(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("stub tests are for non-Windows")
-	}
-
-	ctx := context.Background()
-	s := New("password", "MinimumPasswordLength", "14")
-
-	t.Run("check returns in sync", func(t *testing.T) {
-		state, err := s.Check(ctx)
-		if err != nil {
-			t.Fatalf("Check() error = %v", err)
-		}
-		if !state.InSync {
-			t.Error("stub Check should return InSync=true")
-		}
-	})
-
-	t.Run("apply returns not changed", func(t *testing.T) {
-		result, err := s.Apply(ctx)
-		if err != nil {
-			t.Fatalf("Apply() error = %v", err)
-		}
-		if result.Changed {
-			t.Error("stub Apply should return Changed=false")
-		}
-	})
 }
