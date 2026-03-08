@@ -9,15 +9,17 @@ import (
 func TestRegistry_IDAndString(t *testing.T) {
 	tests := []struct {
 		key     string
+		value   string
 		wantID  string
 		wantStr string
 	}{
-		{`HKLM\SOFTWARE\Test`, `registry:HKLM\SOFTWARE\Test`, `Registry HKLM\SOFTWARE\Test`},
-		{`HKCU\Control Panel`, `registry:HKCU\Control Panel`, `Registry HKCU\Control Panel`},
+		{`HKLM\SOFTWARE\Test`, "Foo", `registry:HKLM\SOFTWARE\Test\Foo`, `Registry HKLM\SOFTWARE\Test\Foo`},
+		{`HKCU\Control Panel`, "Bar", `registry:HKCU\Control Panel\Bar`, `Registry HKCU\Control Panel\Bar`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {
 			r := New(tt.key)
+			r.Value = tt.value
 			if r.ID() != tt.wantID {
 				t.Errorf("ID() = %q, want %q", r.ID(), tt.wantID)
 			}
@@ -39,6 +41,13 @@ func TestRegistry_IsCritical(t *testing.T) {
 	}
 }
 
+func TestRegistry_DefaultState(t *testing.T) {
+	r := New(`HKLM\SOFTWARE\Test`)
+	if r.State != "present" {
+		t.Errorf("default State = %q, want %q", r.State, "present")
+	}
+}
+
 func TestRegistry_StubBehavior(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("stub tests are for non-Windows")
@@ -46,37 +55,25 @@ func TestRegistry_StubBehavior(t *testing.T) {
 
 	ctx := context.Background()
 	r := New(`HKLM\SOFTWARE\Test`)
+	r.Value = "TestVal"
 
-	tests := []struct {
-		name string
-		fn   func() error
-	}{
-		{"check returns in sync", func() error {
-			state, err := r.Check(ctx)
-			if err != nil {
-				return err
-			}
-			if !state.InSync {
-				t.Error("stub Check should return InSync=true")
-			}
-			return nil
-		}},
-		{"apply returns not changed", func() error {
-			result, err := r.Apply(ctx)
-			if err != nil {
-				return err
-			}
-			if result.Changed {
-				t.Error("stub Apply should return Changed=false")
-			}
-			return nil
-		}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.fn(); err != nil {
-				t.Fatalf("error = %v", err)
-			}
-		})
-	}
+	t.Run("check returns in sync", func(t *testing.T) {
+		state, err := r.Check(ctx)
+		if err != nil {
+			t.Fatalf("Check() error = %v", err)
+		}
+		if !state.InSync {
+			t.Error("stub Check should return InSync=true")
+		}
+	})
+
+	t.Run("apply returns not changed", func(t *testing.T) {
+		result, err := r.Apply(ctx)
+		if err != nil {
+			t.Fatalf("Apply() error = %v", err)
+		}
+		if result.Changed {
+			t.Error("stub Apply should return Changed=false")
+		}
+	})
 }

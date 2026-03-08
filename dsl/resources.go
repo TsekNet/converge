@@ -2,10 +2,12 @@ package dsl
 
 import (
 	"github.com/TsekNet/converge/extensions"
+	extaudit "github.com/TsekNet/converge/extensions/auditpol"
 	extexec "github.com/TsekNet/converge/extensions/exec"
 	extfile "github.com/TsekNet/converge/extensions/file"
 	extpkg "github.com/TsekNet/converge/extensions/pkg"
 	extreg "github.com/TsekNet/converge/extensions/registry"
+	extsecpol "github.com/TsekNet/converge/extensions/secpol"
 	extsvc "github.com/TsekNet/converge/extensions/service"
 	extuser "github.com/TsekNet/converge/extensions/user"
 )
@@ -27,6 +29,7 @@ func newPackageExtension(name string, opts PackageOpts, pkgManager string) exten
 
 func newServiceExtension(name string, opts ServiceOpts, initSystem string) extensions.Extension {
 	s := extsvc.New(name, string(opts.State), opts.Enable, initSystem)
+	s.StartupType = opts.StartupType
 	s.Critical = opts.Critical
 	return s
 }
@@ -56,5 +59,20 @@ func newRegistryExtension(key string, opts RegistryOpts) extensions.Extension {
 	r.Type = opts.Type
 	r.Data = opts.Data
 	r.Critical = opts.Critical
+	if opts.State == Absent {
+		r.State = "absent"
+	}
 	return r
+}
+
+func newSecurityPolicyExtension(_ string, opts SecurityPolicyOpts) extensions.Extension {
+	s := extsecpol.New(opts.Category, opts.Key, opts.Value)
+	s.Critical = opts.Critical
+	return s
+}
+
+func newAuditPolicyExtension(_ string, opts AuditPolicyOpts) extensions.Extension {
+	a := extaudit.New(opts.Subcategory, opts.Success, opts.Failure)
+	a.Critical = opts.Critical
+	return a
 }

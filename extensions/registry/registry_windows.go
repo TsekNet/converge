@@ -5,72 +5,248 @@ package registry
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"github.com/TsekNet/converge/extensions"
+	"golang.org/x/sys/windows/registry"
 )
 
 type Registry struct {
 	Key      string
 	Value    string
 	Type     string
-	Data     interface{}
+	Data     any
+	State    string // "present" (default) or "absent"
 	Critical bool
 }
 
 func New(key string) *Registry {
-	return &Registry{Key: key}
+	return &Registry{Key: key, State: "present"}
 }
 
-func (r *Registry) ID() string       { return fmt.Sprintf("registry:%s", r.Key) }
-func (r *Registry) String() string    { return fmt.Sprintf("Registry %s", r.Key) }
+func (r *Registry) ID() string       { return fmt.Sprintf("registry:%s\\%s", r.Key, r.Value) }
+func (r *Registry) String() string   { return fmt.Sprintf("Registry %s\\%s", r.Key, r.Value) }
 func (r *Registry) IsCritical() bool { return r.Critical }
 
-func (r *Registry) Check(ctx context.Context) (*extensions.State, error) {
-	cmd := exec.CommandContext(ctx, "reg", "query", r.Key, "/v", r.Value)
-	out, err := cmd.Output()
+func (r *Registry) Check(_ context.Context) (*extensions.State, error) {
+	root, path, err := parseKeyPath(r.Key)
 	if err != nil {
+		return nil, err
+	}
+
+	k, err := registry.OpenKey(root, path, registry.READ)
+	if err != nil {
+		if r.State == "absent" {
+			return &extensions.State{InSync: true}, nil
+		}
 		return &extensions.State{
-			InSync: false,
-			Changes: []extensions.Change{
-				{Property: r.Value, To: fmt.Sprintf("%v", r.Data), Action: "add"},
-			},
+			InSync:  false,
+			Changes: []extensions.Change{{Property: r.Value, To: fmt.Sprintf("%v", r.Data), Action: "add"}},
+		}, nil
+	}
+	defer k.Close()
+
+	if r.State == "absent" {
+		if _, _, err := k.GetValue(r.Value, nil); err != nil {
+			return &extensions.State{InSync: true}, nil
+		}
+		return &extensions.State{
+			InSync:  false,
+			Changes: []extensions.Change{{Property: r.Value, From: "(exists)", To: "(absent)", Action: "remove"}},
 		}, nil
 	}
 
-	if r.Data != nil && !strings.Contains(string(out), fmt.Sprintf("%v", r.Data)) {
+	current, err := r.readValue(k)
+	if err != nil {
 		return &extensions.State{
-			InSync: false,
-			Changes: []extensions.Change{
-				{Property: r.Value, To: fmt.Sprintf("%v", r.Data), Action: "modify"},
-			},
+			InSync:  false,
+			Changes: []extensions.Change{{Property: r.Value, To: fmt.Sprintf("%v", r.Data), Action: "add"}},
+		}, nil
+	}
+
+	desired := fmt.Sprintf("%v", r.Data)
+	if current != desired {
+		return &extensions.State{
+			InSync:  false,
+			Changes: []extensions.Change{{Property: r.Value, From: current, To: desired, Action: "modify"}},
 		}, nil
 	}
 
 	return &extensions.State{InSync: true}, nil
 }
 
-func (r *Registry) Apply(ctx context.Context) (*extensions.Result, error) {
-	regType := "REG_SZ"
-	switch strings.ToLower(r.Type) {
-	case "dword":
-		regType = "REG_DWORD"
-	case "qword":
-		regType = "REG_QWORD"
-	case "expandstring":
-		regType = "REG_EXPAND_SZ"
-	case "multistring":
-		regType = "REG_MULTI_SZ"
-	case "binary":
-		regType = "REG_BINARY"
-	}
-
-	cmd := exec.CommandContext(ctx, "reg", "add", r.Key, "/v", r.Value, "/t", regType, "/d", fmt.Sprintf("%v", r.Data), "/f")
-	out, err := cmd.CombinedOutput()
+func (r *Registry) Apply(_ context.Context) (*extensions.Result, error) {
+	root, path, err := parseKeyPath(r.Key)
 	if err != nil {
-		return nil, fmt.Errorf("reg add %s: %s: %w", r.Key, strings.TrimSpace(string(out)), err)
+		return nil, err
 	}
 
-	return &extensions.Result{Changed: true, Status: extensions.StatusChanged, Message: "Set"}, nil
+	if r.State == "absent" {
+		k, err := registry.OpenKey(root, path, registry.SET_VALUE)
+		if err != nil {
+			return &extensions.Result{Changed: false, Status: extensions.StatusOK, Message: "key not found"}, nil
+		}
+		defer k.Close()
+		if err := k.DeleteValue(r.Value); err != nil {
+			return nil, fmt.Errorf("delete value %s\\%s: %w", r.Key, r.Value, err)
+		}
+		return &extensions.Result{Changed: true, Status: extensions.StatusChanged, Message: "deleted"}, nil
+	}
+
+	k, _, err := registry.CreateKey(root, path, registry.SET_VALUE)
+	if err != nil {
+		return nil, fmt.Errorf("create key %s: %w", r.Key, err)
+	}
+	defer k.Close()
+
+	if err := r.writeValue(k); err != nil {
+		return nil, fmt.Errorf("set %s\\%s: %w", r.Key, r.Value, err)
+	}
+
+	return &extensions.Result{Changed: true, Status: extensions.StatusChanged, Message: "set"}, nil
+}
+
+func (r *Registry) readValue(k registry.Key) (string, error) {
+	switch normalizeType(r.Type) {
+	case "dword":
+		v, _, err := k.GetIntegerValue(r.Value)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("%d", v), nil
+	case "qword":
+		v, _, err := k.GetIntegerValue(r.Value)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("%d", v), nil
+	case "multistring":
+		v, _, err := k.GetStringsValue(r.Value)
+		if err != nil {
+			return "", err
+		}
+		return strings.Join(v, ","), nil
+	case "binary":
+		v, _, err := k.GetBinaryValue(r.Value)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("%x", v), nil
+	default:
+		v, _, err := k.GetStringValue(r.Value)
+		if err != nil {
+			return "", err
+		}
+		return v, nil
+	}
+}
+
+func (r *Registry) writeValue(k registry.Key) error {
+	switch normalizeType(r.Type) {
+	case "dword":
+		return k.SetDWordValue(r.Value, toUint32(r.Data))
+	case "qword":
+		return k.SetQWordValue(r.Value, toUint64(r.Data))
+	case "expandstring":
+		return k.SetExpandStringValue(r.Value, fmt.Sprintf("%v", r.Data))
+	case "multistring":
+		return k.SetStringsValue(r.Value, toStringSlice(r.Data))
+	case "binary":
+		return k.SetBinaryValue(r.Value, toBytes(r.Data))
+	default:
+		return k.SetStringValue(r.Value, fmt.Sprintf("%v", r.Data))
+	}
+}
+
+func normalizeType(t string) string {
+	s := strings.ToLower(t)
+	s = strings.TrimPrefix(s, "reg_")
+	switch s {
+	case "sz", "string", "":
+		return "sz"
+	case "expand_sz", "expandstring":
+		return "expandstring"
+	case "multi_sz", "multistring":
+		return "multistring"
+	default:
+		return s
+	}
+}
+
+func parseKeyPath(full string) (registry.Key, string, error) {
+	idx := strings.IndexByte(full, '\\')
+	if idx < 0 {
+		return 0, "", fmt.Errorf("invalid registry path %q: missing root", full)
+	}
+	rootStr, path := full[:idx], full[idx+1:]
+	switch strings.ToUpper(rootStr) {
+	case "HKLM", "HKEY_LOCAL_MACHINE":
+		return registry.LOCAL_MACHINE, path, nil
+	case "HKCU", "HKEY_CURRENT_USER":
+		return registry.CURRENT_USER, path, nil
+	case "HKCR", "HKEY_CLASSES_ROOT":
+		return registry.CLASSES_ROOT, path, nil
+	case "HKU", "HKEY_USERS":
+		return registry.USERS, path, nil
+	case "HKCC", "HKEY_CURRENT_CONFIG":
+		return registry.CURRENT_CONFIG, path, nil
+	default:
+		return 0, "", fmt.Errorf("unknown registry root %q", rootStr)
+	}
+}
+
+func toUint32(v any) uint32 {
+	switch n := v.(type) {
+	case int:
+		return uint32(n)
+	case int64:
+		return uint32(n)
+	case uint32:
+		return n
+	case uint64:
+		return uint32(n)
+	case float64:
+		return uint32(n)
+	default:
+		return 0
+	}
+}
+
+func toUint64(v any) uint64 {
+	switch n := v.(type) {
+	case int:
+		return uint64(n)
+	case int64:
+		return uint64(n)
+	case uint32:
+		return uint64(n)
+	case uint64:
+		return n
+	case float64:
+		return uint64(n)
+	default:
+		return 0
+	}
+}
+
+func toStringSlice(v any) []string {
+	switch s := v.(type) {
+	case []string:
+		return s
+	case string:
+		return strings.Split(s, ",")
+	default:
+		return []string{fmt.Sprintf("%v", v)}
+	}
+}
+
+func toBytes(v any) []byte {
+	switch b := v.(type) {
+	case []byte:
+		return b
+	case string:
+		return []byte(b)
+	default:
+		return []byte(fmt.Sprintf("%v", v))
+	}
 }

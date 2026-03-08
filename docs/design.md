@@ -1,7 +1,5 @@
 # Design
 
-**[← Wiki Home](Home)** · [Guide](Guide) · [CLI](CLI) · [Extending](Extending)
-
 Converge is a Go-based configuration management tool that compiles to a single static binary per platform. This document covers the motivation, design philosophy, and internal architecture.
 
 ---
@@ -114,8 +112,8 @@ converge/
 │   ├── converge.go          # State enums (Present, Absent, Running, Stopped)
 │   ├── app.go               # App: New(), Register(), Execute(), RunPlan(), RunApply()
 │   ├── blueprint.go         # Blueprint func type: func(*Run)
-│   ├── opts.go              # FileOpts, PackageOpts, ServiceOpts, ExecOpts, UserOpts, RegistryOpts
-│   ├── run.go               # Run: File(), Package(), Service(), Exec(), User(), Registry(), Include()
+│   ├── opts.go              # FileOpts, PackageOpts, ServiceOpts, ExecOpts, UserOpts, RegistryOpts, SecurityPolicyOpts, AuditPolicyOpts
+│   ├── run.go               # Run: File(), Package(), Service(), Exec(), User(), Registry(), SecurityPolicy(), AuditPolicy(), Include()
 │   └── resources.go         # Wires DSL opts to real extension implementations
 │
 ├── extensions/              # Public, community-extensible
@@ -124,9 +122,11 @@ converge/
 │   ├── file/                # file.go, file_test.go
 │   ├── exec/                # exec.go, exec_test.go
 │   ├── pkg/                 # pkg.go (interface), apt.go, brew.go, choco.go
-│   ├── service/             # service.go (interface), systemd.go, launchd.go, windows.go
+│   ├── service/             # service.go, service_linux.go, service_darwin.go, service_windows.go
 │   ├── user/                # user.go (shared), user_linux.go, user_darwin.go, user_windows.go
-│   └── registry/            # registry_stub.go (linux||darwin), registry_windows.go
+│   ├── registry/            # registry_stub.go (linux||darwin), registry_windows.go
+│   ├── secpol/              # secpol_stub.go (linux||darwin), secpol_windows.go
+│   └── auditpol/            # auditpol_stub.go (linux||darwin), auditpol_windows.go
 │
 ├── internal/
 │   ├── engine/              # Plan/apply orchestration, duplicate detection
@@ -142,11 +142,12 @@ converge/
 │   ├── linux.go
 │   ├── darwin.go
 │   ├── windows.go
+│   ├── windows_cis.go
 │   └── linux_server.go
 │
 ├── assets/                  # Logo, demo GIF, vhs-demo.go, demo.tape (see assets/README.md)
 │
-└── docs/
+└── docs/                    # Documentation (design, guide, CLI, extending)
 ```
 
 **Boundary rules:**

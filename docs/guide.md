@@ -1,7 +1,5 @@
 # Guide
 
-**[← Wiki Home](Home)** · [Design](Design) · [CLI](CLI) · [Extending](Extending)
-
 How to write, register, compose, and test Converge blueprints, plus a complete reference for every built-in resource type.
 
 ---
@@ -200,7 +198,7 @@ r.Package(name string, opts dsl.PackageOpts)
 
 ### Service
 
-Manage service runtime state and boot-time enablement.
+Manage service runtime state, boot-time enablement, and startup type.
 
 ```go
 r.Service(name string, opts dsl.ServiceOpts)
@@ -210,12 +208,13 @@ r.Service(name string, opts dsl.ServiceOpts)
 |-------|------|---------|-------------|
 | `State` | `dsl.ServiceState` | `dsl.Running` | `Running` or `Stopped`. |
 | `Enable` | `bool` | `false` | If `true`, enable the service to start at boot. |
+| `StartupType` | `string` | `""` | Windows SCM startup type: `"auto"`, `"delayed-auto"`, `"manual"`, `"disabled"`. |
 
-| Platform | Init System |
-|----------|-------------|
-| Linux | `systemd` (systemctl) |
-| macOS | `launchd` (launchctl) |
-| Windows | Windows Service Control Manager (sc.exe) |
+| Platform | Init System | API |
+|----------|-------------|-----|
+| Linux | `systemd` | `systemctl` |
+| macOS | `launchd` | stub (not yet implemented) |
+| Windows | Windows SCM | `golang.org/x/sys/windows/svc/mgr` (native Win32) |
 
 **Idempotency:** Checks current state before acting. Starting a running service is a no-op.
 
@@ -231,28 +230,11 @@ r.Exec(name string, opts dsl.ExecOpts)
 |-------|------|---------|-------------|
 | `Command` | `string` | `""` | The command to execute. Required. |
 | `Args` | `[]string` | `nil` | Arguments passed to the command. |
-| `Check` | `string` | `""` | Guard command. If exits 0, `Command` is skipped (state already correct). |
+| `OnlyIf` | `string` | `""` | Guard command. If exits 0, `Command` is skipped (state already correct). |
 | `Retries` | `int` | `0` | Number of retry attempts on failure. |
 | `RetryDelay` | `time.Duration` | `0` | Delay between retries. |
 
-| Platform | Shell |
-|----------|-------|
-| Linux/macOS | `/bin/sh -c` |
-| Windows | `cmd.exe /C` |
-
-**Idempotency:** Not inherently idempotent. Always provide a `Check` command to make it conditional.
-
-**Example:**
-
-```go
-r.Exec("reload-nginx", dsl.ExecOpts{
-    Command:    "nginx",
-    Args:       []string{"-s", "reload"},
-    Check:      "nginx -t",
-    Retries:    2,
-    RetryDelay: 5 * time.Second,
-})
-```
+**Idempotency:** Not inherently idempotent. Always provide an `OnlyIf` command to make it conditional.
 
 ### User
 
@@ -279,20 +261,87 @@ r.User(name string, opts dsl.UserOpts)
 
 ### Registry
 
-Manage Windows registry keys and values. On non-Windows platforms, this resource is a silent no-op.
+Manage Windows registry keys and values via native Win32 API (`golang.org/x/sys/windows/registry`). On non-Windows platforms, this resource is a silent no-op.
 
 ```go
 r.Registry(key string, opts dsl.RegistryOpts)
 ```
 
-The `key` is the full registry path including value name, e.g., `HKLM\SOFTWARE\MyApp\Setting`.
+The `key` is the full registry path, e.g., `HKLM\SOFTWARE\MyApp`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `Value` | `string` | `""` | The registry value name under the key. |
-| `Type` | `string` | `"string"` | `"string"`, `"dword"`, `"qword"`, `"expandstring"`, `"multistring"`, `"binary"`. |
-| `Data` | `interface{}` | `nil` | The data to set. Type must match `Type`. |
+| `Type` | `string` | `"sz"` | `"sz"`, `"dword"`, `"qword"`, `"expandstring"`, `"multistring"`, `"binary"`. Also accepts `"REG_DWORD"` etc. |
+| `Data` | `any` | `nil` | The data to set. Type must match `Type`. |
+| `State` | `dsl.ResourceState` | `dsl.Present` | `Present` to create/set, `Absent` to delete the value. |
+
+**Supported root keys:** `HKLM`, `HKCU`, `HKCR`, `HKU`, `HKCC` (and their long forms like `HKEY_LOCAL_MACHINE`).
+
+**Platform behavior:** Full support on Windows using native Win32 registry API. No-op on Linux/macOS.
+
+**Idempotency:** Reads current value via type-appropriate getter and compares. Creates intermediate keys if needed without disturbing existing sibling values.
+
+### SecurityPolicy
+
+Manage Windows local security policy settings via native Win32 APIs (`NetUserModalsGet/Set` from `netapi32.dll`). On non-Windows platforms, this resource is a silent no-op.
+
+```go
+r.SecurityPolicy(name string, opts dsl.SecurityPolicyOpts)
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `Category` | `string` | `""` | `"password"` or `"lockout"`. Required. |
+| `Key` | `string` | `""` | Setting name. Required. |
+| `Value` | `string` | `""` | Desired value as string. |
+
+**Password policy keys** (`Category: "password"`):
+
+| Key | Description |
+|-----|-------------|
+| `MinimumPasswordLength` | Minimum password length |
+| `MaximumPasswordAge` | Maximum password age (seconds) |
+| `MinimumPasswordAge` | Minimum password age (seconds) |
+| `PasswordHistorySize` | Number of remembered passwords |
+| `ForceLogoff` | Force logoff time (seconds) |
+
+**Lockout policy keys** (`Category: "lockout"`):
+
+| Key | Description |
+|-----|-------------|
+| `LockoutThreshold` | Failed logon attempts before lockout |
+| `LockoutDuration` | Lockout duration (seconds) |
+| `LockoutObservationWindow` | Observation window (seconds) |
 
 **Platform behavior:** Full support on Windows. No-op on Linux/macOS.
 
-**Idempotency:** Reads current value and compares type and data. Creates intermediate keys if needed without disturbing existing sibling values.
+### AuditPolicy
+
+Manage Windows advanced audit policy via native Win32 APIs (`AuditQuerySystemPolicy/AuditSetSystemPolicy` from `advapi32.dll`). On non-Windows platforms, this resource is a silent no-op.
+
+```go
+r.AuditPolicy(name string, opts dsl.AuditPolicyOpts)
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `Subcategory` | `string` | `""` | Audit subcategory name (case-insensitive). Required. |
+| `Success` | `bool` | `false` | Enable success auditing. |
+| `Failure` | `bool` | `false` | Enable failure auditing. |
+
+**Supported subcategories** (59 total, organized by category):
+
+| Category | Subcategories |
+|----------|--------------|
+| **Account Logon** | Credential Validation, Kerberos Authentication Service, Kerberos Service Ticket Operations, Other Account Logon Events |
+| **Account Management** | Application Group Management, Computer Account Management, Distribution Group Management, Other Account Management Events, Security Group Management, User Account Management |
+| **Detailed Tracking** | DPAPI Activity, Plug and Play Events, Process Creation, Process Termination, RPC Events, Token Right Adjusted Events |
+| **DS Access** | Directory Service Access, Directory Service Changes, Directory Service Replication, Detailed Directory Service Replication |
+| **Logon/Logoff** | Account Lockout, Group Membership, IPsec Extended Mode, IPsec Main Mode, IPsec Quick Mode, Logoff, Logon, Network Policy Server, Other Logon/Logoff Events, Special Logon, User / Device Claims |
+| **Object Access** | Application Generated, Central Policy Staging, Certification Services, Detailed File Share, File Share, File System, Filtering Platform Connection, Filtering Platform Packet Drop, Handle Manipulation, Kernel Object, Other Object Access Events, Registry, Removable Storage, SAM |
+| **Policy Change** | Audit Policy Change, Authentication Policy Change, Authorization Policy Change, Filtering Platform Policy Change, MPSSVC Rule-Level Policy Change, Other Policy Change Events |
+| **Privilege Use** | Non Sensitive Privilege Use, Other Privilege Use Events, Sensitive Privilege Use |
+| **System** | IPsec Driver, Other System Events, Security State Change, Security System Extension, System Integrity |
+
+**Platform behavior:** Full support on Windows. No-op on Linux/macOS.

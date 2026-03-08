@@ -1,7 +1,5 @@
 # Adding a New Extension
 
-**[← Wiki Home](Home)** · [Design](Design) · [Guide](Guide) · [CLI](CLI)
-
 This guide walks through adding a new extension to Converge. Extensions are everything that touches the OS: package managers, init systems, file operations, etc.
 
 ---
@@ -114,7 +112,7 @@ Some extensions have sub-interfaces for platform-specific implementations:
 | Extension | Sub-Interface | Implementations |
 |-----------|--------------|-----------------|
 | `pkg/` | `PackageManager` | apt, brew, choco, dnf, yum, zypper, apk, pacman, winget |
-| `service/` | `ServiceManager` | systemd, launchd, windows, (add: openrc, runit) |
+| `service/` | Platform build tags | systemd (Linux), launchd (macOS), SCM (Windows) |
 
 To add a new package manager or init system, implement the sub-interface and register it. The engine doesn't change.
 
@@ -129,9 +127,11 @@ extensions/
 ├── file/                 # File management
 ├── exec/                 # Command execution
 ├── pkg/                  # Package management (add new managers here)
-├── service/              # Service management (add new init systems here)
+├── service/              # Service management (platform build tags)
 ├── user/                 # User/group management
-└── registry/             # Windows registry
+├── registry/             # Windows registry (native Win32 API)
+├── secpol/               # Windows security policy (NetUserModalsGet/Set, LSA)
+└── auditpol/             # Windows audit policy (AuditQuerySystemPolicy/AuditSetSystemPolicy)
 ```
 
 ---
@@ -141,19 +141,19 @@ extensions/
 Use Go build tags to split platform-specific code. The pattern:
 
 ```
-extensions/user/
-├── user.go            # Shared: struct, New(), ID(), String(), Check()
-├── user_linux.go      # //go:build linux  -- Apply() using useradd/usermod
-├── user_darwin.go     # //go:build darwin -- Apply() using dscl
-├── user_windows.go    # //go:build windows  -- Apply() using net user
-└── user_test.go       # Tests (Check tests run everywhere, Apply tests skip wrong platform)
+extensions/service/
+├── service.go            # Shared: struct, New(), ID(), String(), IsCritical()
+├── service_linux.go      # //go:build linux  -- Check/Apply via systemd
+├── service_darwin.go     # //go:build darwin -- stub
+├── service_windows.go    # //go:build windows  -- Check/Apply via svc/mgr
+└── service_test.go       # Tests (platform-gated where needed)
 ```
 
 **Rules:**
-1. `Check()` should be cross-platform (reading state is usually portable)
-2. `Apply()` goes in build-tagged files (one per platform)
+1. The struct definition and `New()` constructor stay in the shared file
+2. `Check()` and `Apply()` go in build-tagged files (one per platform)
 3. Helper functions used only by one platform go in that platform's file
-4. The struct definition and `New()` constructor stay in the shared file
+4. Windows extensions should use native Win32 APIs (via `golang.org/x/sys/windows` or `windows.NewLazySystemDLL`), not shell out to executables
 
 **Example: no-op stub for unsupported platform**
 
@@ -190,5 +190,5 @@ func TestUser_Apply(t *testing.T) {
 - Keep extensions stateless -- all state comes from Check()
 - Use `context.Context` for cancellation and timeouts
 - Wrap errors with `fmt.Errorf("...: %w", err)` for debugging
-- Put `Check()` in the shared file, `Apply()` in build-tagged files
 - No-op stubs should return `InSync: true` (skip) not `InSync: false` (false alarm)
+- For Windows: prefer `golang.org/x/sys/windows/registry`, `golang.org/x/sys/windows/svc/mgr`, and `windows.NewLazySystemDLL` over `exec.Command`

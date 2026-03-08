@@ -10,13 +10,13 @@ func Windows(r *dsl.Run) {
 
 	r.Registry(`HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced`, dsl.RegistryOpts{
 		Value: "HideFileExt",
-		Type:  "REG_DWORD",
+		Type:  "dword",
 		Data:  0,
 	})
 
 	r.Registry(`HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection`, dsl.RegistryOpts{
 		Value: "AllowTelemetry",
-		Type:  "REG_DWORD",
+		Type:  "dword",
 		Data:  0,
 	})
 }

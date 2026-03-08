@@ -18,7 +18,7 @@ func TestResourceCheckAndApply(t *testing.T) {
 		{"service", func(r *Run) { r.Service("sshd", ServiceOpts{State: Running}) }, "service:sshd"},
 		{"exec", func(r *Run) { r.Exec("test", ExecOpts{Command: "echo"}) }, "exec:test"},
 		{"user", func(r *Run) { r.User("dev", UserOpts{Shell: "/bin/bash"}) }, "user:dev"},
-		{"registry", func(r *Run) { r.Registry(`HKLM\Test`, RegistryOpts{Value: "v"}) }, `registry:HKLM\Test`},
+		{"registry", func(r *Run) { r.Registry(`HKLM\Test`, RegistryOpts{Value: "v"}) }, `registry:HKLM\Test\v`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

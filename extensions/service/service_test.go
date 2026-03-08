@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"runtime"
 	"testing"
 )
 
@@ -49,8 +50,10 @@ func TestService_Apply_UnsupportedInit(t *testing.T) {
 }
 
 func TestService_CheckSystemd_LiveCron(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("systemd tests only run on Linux")
+	}
 	ctx := context.Background()
-
 	s := New("cron", "running", true, "systemd")
 	state, err := s.Check(ctx)
 	if err != nil {
@@ -60,8 +63,10 @@ func TestService_CheckSystemd_LiveCron(t *testing.T) {
 }
 
 func TestService_CheckSystemd_NonexistentService(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("systemd tests only run on Linux")
+	}
 	ctx := context.Background()
-
 	s := New("converge-definitely-not-real-12345", "running", true, "systemd")
 	state, err := s.Check(ctx)
 	if err != nil {
@@ -73,6 +78,9 @@ func TestService_CheckSystemd_NonexistentService(t *testing.T) {
 }
 
 func TestService_Check_Launchd(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("launchd tests only run on macOS")
+	}
 	ctx := context.Background()
 	s := New("test", "running", true, "launchd")
 	state, err := s.Check(ctx)
@@ -85,6 +93,9 @@ func TestService_Check_Launchd(t *testing.T) {
 }
 
 func TestService_Check_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows SCM tests only run on Windows")
+	}
 	ctx := context.Background()
 	s := New("test", "running", true, "windows")
 	state, err := s.Check(ctx)
@@ -92,11 +103,14 @@ func TestService_Check_Windows(t *testing.T) {
 		t.Fatalf("Check() error = %v", err)
 	}
 	if !state.InSync {
-		t.Error("windows stub should always return InSync=true")
+		t.Error("windows Check should return InSync=true for nonexistent service")
 	}
 }
 
 func TestService_CheckSystemd_StoppedService(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("systemd tests only run on Linux")
+	}
 	ctx := context.Background()
 	s := New("converge-definitely-not-real-12345", "stopped", false, "systemd")
 	state, err := s.Check(ctx)
@@ -127,10 +141,18 @@ func TestService_New(t *testing.T) {
 	if s.State != "stopped" {
 		t.Errorf("State = %q, want %q", s.State, "stopped")
 	}
-	if s.Enable != false {
+	if s.Enable {
 		t.Error("Enable should be false")
 	}
 	if s.InitSystem != "systemd" {
 		t.Errorf("InitSystem = %q, want %q", s.InitSystem, "systemd")
+	}
+}
+
+func TestService_StartupType(t *testing.T) {
+	s := New("wuauserv", "running", true, "windows")
+	s.StartupType = "disabled"
+	if s.StartupType != "disabled" {
+		t.Errorf("StartupType = %q, want %q", s.StartupType, "disabled")
 	}
 }

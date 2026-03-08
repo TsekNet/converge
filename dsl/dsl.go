@@ -39,9 +39,10 @@ type PackageOpts struct {
 }
 
 type ServiceOpts struct {
-	State    ServiceState
-	Enable   bool
-	Critical bool
+	State       ServiceState
+	Enable      bool
+	StartupType string // "auto", "delayed-auto", "manual", "disabled" (Windows SCM)
+	Critical    bool
 }
 
 type ExecOpts struct {
@@ -66,6 +67,21 @@ type UserOpts struct {
 type RegistryOpts struct {
 	Value    string
 	Type     string
-	Data     interface{}
+	Data     any
+	State    ResourceState // Present (default) or Absent
 	Critical bool
+}
+
+type SecurityPolicyOpts struct {
+	Category string // "password" or "lockout"
+	Key      string
+	Value    string
+	Critical bool
+}
+
+type AuditPolicyOpts struct {
+	Subcategory string
+	Success     bool
+	Failure     bool
+	Critical    bool
 }

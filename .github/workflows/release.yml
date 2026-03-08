@@ -1,0 +1,131 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run unit tests
+        if: matrix.goos == 'linux'
+        run: go test -v -race -count=1 ./...
+
+      - name: Build binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -ldflags "-s -w \
+              -X github.com/TsekNet/converge/internal/version.Version=${GITHUB_REF_NAME#v} \
+              -X github.com/TsekNet/converge/internal/version.Commit=$GITHUB_SHA \
+              -X github.com/TsekNet/converge/internal/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -o dist/ ./cmd/converge
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            mv dist/converge dist/converge.exe 2>/dev/null || true
+          fi
+
+      - name: Install WiX (Windows)
+        if: matrix.goos == 'windows'
+        run: dotnet tool install --global wix --version 6.0.2
+
+      - name: Build MSI (Windows)
+        if: matrix.goos == 'windows'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          wix build build/windows/msi/converge.wxs -arch x64 -d Version="$VERSION" -d StagingDir=dist -o dist/converge.msi
+
+      - name: Build .pkg (macOS)
+        if: matrix.goos == 'darwin'
+        shell: bash
+        run: |
+          PKG_ROOT="pkgroot"
+          mkdir -p "$PKG_ROOT/usr/local/bin" pkgscripts
+          cp dist/converge "$PKG_ROOT/usr/local/bin/"
+          chmod 755 "$PKG_ROOT/usr/local/bin/converge"
+          printf '%s\n' '#!/bin/sh' 'exit 0' > pkgscripts/preinstall
+          chmod 755 pkgscripts/preinstall
+          printf '%s\n' '#!/bin/sh' 'exit 0' > pkgscripts/postinstall
+          chmod 755 pkgscripts/postinstall
+          SUFFIX=""
+          if [ "${{ matrix.goarch }}" != "amd64" ]; then
+            SUFFIX="_${{ matrix.goarch }}"
+          fi
+          pkgbuild --identifier com.tseknet.converge --root "$PKG_ROOT" --install-location / --scripts pkgscripts "dist/converge${SUFFIX}.pkg"
+          rm -rf "$PKG_ROOT" pkgscripts
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: converge-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Build .deb package
+        working-directory: dist
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          ARCH=amd64
+          PKG=converge_${VERSION}
+          mkdir -p "${PKG}/usr/local/bin"
+          cp -f converge "${PKG}/usr/local/bin/"
+          chmod 755 "${PKG}/usr/local/bin/converge"
+          mkdir -p "${PKG}/DEBIAN"
+          printf 'Package: converge\nVersion: %s\nArchitecture: %s\nMaintainer: Converge <admin@tseknet.com>\nDescription: Desired-state configuration compiled into a single binary\n' "$VERSION" "$ARCH" > "${PKG}/DEBIAN/control"
+          dpkg-deb --root-owner-group -b "${PKG}" "converge_${VERSION}.deb"
+          cp "converge_${VERSION}.deb" converge.deb
+          rm -rf "${PKG}"
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum * > checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/converge.msi
+            dist/converge.deb
+            dist/converge.pkg
+            dist/converge_arm64.pkg
+            dist/checksums.txt
+          generate_release_notes: true

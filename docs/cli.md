@@ -1,7 +1,5 @@
 # CLI Reference
 
-**[← Wiki Home](Home)** · [Design](Design) · [Guide](Guide) · [Extending](Extending)
-
 Command-line interface for the Converge configuration management tool.
 
 ---
@@ -43,7 +41,7 @@ converge list --extensions
 | `--blueprints` | `-b` | Show only blueprints |
 | `--extensions` | `-e` | Show only extensions |
 
-Built-in blueprints: `workstation`, `linux`, `darwin`, `windows`, `linux_server`.
+Built-in blueprints: `workstation`, `linux`, `darwin`, `windows`, `windows_cis`, `linux_server`.
 
 ### converge version
 
@@ -145,4 +143,8 @@ converge list -b
 
 # List extensions
 converge list -e
+
+# CIS Windows hardening
+converge plan windows_cis
+sudo converge apply windows_cis
 ```

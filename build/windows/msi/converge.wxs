@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Build: wix build build/windows/msi/converge.wxs -arch x64 -d Version=0.0.1 -d StagingDir=dist -o dist/converge.msi -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="Converge"
+    Manufacturer="TsekNet"
+    Version="$(var.Version)"
+    UpgradeCode="C8F9B2D3-AE5F-4A6B-9C4D-2F3E4A5B6C7D"
+    Scope="perMachine">
+
+    <MajorUpgrade AllowDowngrades="yes" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="ConvergeIcon" SourceFile="$(var.StagingDir)/converge.exe" />
+    <Property Id="ARPPRODUCTICON" Value="ConvergeIcon" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="ConvergeDir" Name="Converge">
+        <Component Id="ConvergeExe" Guid="B2C3D4E5-F6A7-8901-BCDE-F12345678901">
+          <File Id="ConvergeExeFile" Source="$(var.StagingDir)/converge.exe" KeyPath="yes" />
+          <Environment Id="PATH" Name="PATH" Value="[ConvergeDir]" Permanent="no" Part="last" Action="set" System="yes" />
+        </Component>
+        <Component Id="CleanupDir" Guid="F6A7B8C9-D012-3456-EF01-789012CDEF01">
+          <RemoveFolder Id="RemoveConvergeDir" On="uninstall" />
+          <RegistryValue Root="HKLM" Key="SOFTWARE\TsekNet\Converge" Name="Cleanup" Value="1" Type="integer" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="ProductFeature" Title="Converge" Level="1">
+      <ComponentRef Id="ConvergeExe" />
+      <ComponentRef Id="CleanupDir" />
+    </Feature>
+  </Package>
+</Wix>

@@ -93,7 +93,7 @@ func TestRun_ResourceIDs(t *testing.T) {
 		{2, "service:sshd", "Service sshd"},
 		{3, "exec:test", "Exec test"},
 		{4, "user:dev", "User dev"},
-		{5, `registry:HKLM\Test`, `Registry HKLM\Test`},
+		{5, `registry:HKLM\Test\test`, `Registry HKLM\Test\test`},
 	}
 
 	resources := run.Resources()

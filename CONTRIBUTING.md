@@ -45,7 +45,7 @@ Short version: implement the [`Extension` interface](extensions/extension.go), d
 
 ## Release Process
 
-Tag and push -- GoReleaser handles the rest:
+Tag and push -- the [release workflow](.github/workflows/release.yml) builds MSI, deb, and pkg installers:
 
 ```bash
 git tag v0.0.2

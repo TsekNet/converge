@@ -9,21 +9,21 @@ import (
 	"github.com/TsekNet/converge/extensions"
 )
 
-// Registry is a no-op stub on non-Windows platforms.
 type Registry struct {
 	Key      string
 	Value    string
 	Type     string
-	Data     interface{}
+	Data     any
+	State    string // "present" (default) or "absent"
 	Critical bool
 }
 
 func New(key string) *Registry {
-	return &Registry{Key: key}
+	return &Registry{Key: key, State: "present"}
 }
 
-func (r *Registry) ID() string       { return fmt.Sprintf("registry:%s", r.Key) }
-func (r *Registry) String() string    { return fmt.Sprintf("Registry %s", r.Key) }
+func (r *Registry) ID() string       { return fmt.Sprintf("registry:%s\\%s", r.Key, r.Value) }
+func (r *Registry) String() string   { return fmt.Sprintf("Registry %s\\%s", r.Key, r.Value) }
 func (r *Registry) IsCritical() bool { return r.Critical }
 
 func (r *Registry) Check(_ context.Context) (*extensions.State, error) {
