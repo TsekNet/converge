@@ -11,6 +11,9 @@ func makePrinter() output.Printer {
 	case "json":
 		return output.NewJSONPrinter()
 	default:
+		if !output.SupportsColor() {
+			return output.NewSerialPrinter()
+		}
 		return output.NewTerminalPrinter()
 	}
 }

@@ -1,6 +1,23 @@
 package output
 
-import "strings"
+import (
+	"os"
+	"strings"
+)
+
+// SupportsColor returns true if stdout is a TTY with ANSI support.
+// On Windows, it attempts to enable virtual terminal processing first.
+// Returns false when NO_COLOR is set, stdout is not a TTY, or the
+// console doesn't support escape sequences (legacy PowerShell/cmd).
+func SupportsColor() bool {
+	if _, ok := os.LookupEnv("NO_COLOR"); ok {
+		return false
+	}
+	if !isTTY() {
+		return false
+	}
+	return enableVT()
+}
 
 // splitResource extracts the type and short name from an Extension's String().
 // "File /etc/motd" -> ("File", "/etc/motd")
