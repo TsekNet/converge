@@ -60,11 +60,11 @@ converge plan my-server --detailed-exit-codes  # granular exit codes for CI
 
 | Feature | Description |
 |---------|-------------|
-| **Compiled blueprints** | Go code: catch misconfigurations at build time, not at 2 AM |
+| **Compiled blueprints** | Go code: catch misconfigurations at build time |
 | **Zero dependencies** | Single static binary, no Ruby/Python/JVM runtime |
 | **Cross-platform** | Linux, macOS, Windows from one codebase with build tags |
 | **Native OS APIs** | Win32 registry/SCM/LSA, Linux sysctl via `/proc/sys`, macOS plist via `howett.net/plist` -- no shelling out |
-| **CIS benchmarks** | Built-in CIS L1 blueprints for [Windows 11](blueprints/cis/cis_windows.go), [Ubuntu 24.04](blueprints/cis/cis_linux.go), and [macOS](blueprints/cis/cis_darwin.go) |
+| **CIS benchmarks** | Built-in CIS L1 blueprints for [Windows](blueprints/cis/cis_windows.go), [Ubuntu](blueprints/cis/cis_linux.go), and [macOS](blueprints/cis/cis_darwin.go) |
 | **Plan / Apply** | Dry-run any blueprint before making changes |
 | **Parallel execution** | Concurrent resource application with configurable parallelism |
 | **Extensible** | Implement the `Extension` interface to add new resource types |
