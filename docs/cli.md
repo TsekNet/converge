@@ -50,9 +50,7 @@ Built-in blueprints vary by platform:
 | `linux_server` | Linux | Hardened Linux server |
 | `darwin` | macOS | macOS-specific defaults |
 | `windows` | Windows | Windows-specific defaults |
-| `linux_cis` | Linux | CIS Ubuntu 24.04 LTS L1 Server |
-| `darwin_cis` | macOS | CIS macOS L1 |
-| `windows_cis` | Windows | CIS Windows 11 Enterprise L1 |
+| `cis` | All | CIS L1 security benchmark (platform-specific) |
 
 ### converge version
 
@@ -148,12 +146,7 @@ converge list -b
 converge list -e
 
 # CIS hardening (platform-specific)
-converge plan linux_cis
-sudo converge apply linux_cis
-
-converge plan windows_cis
-converge apply windows_cis       # run as Administrator
-
-converge plan darwin_cis
-sudo converge apply darwin_cis
+# CIS hardening (same command on every platform)
+converge plan cis
+sudo converge apply cis
 ```

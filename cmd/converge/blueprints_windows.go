@@ -10,5 +10,5 @@ import (
 
 func registerPlatformBlueprints(a *dsl.App) {
 	a.Register("windows", "Windows workstation", blueprints.Windows)
-	a.Register("windows_cis", "CIS Windows 11 Enterprise L1 benchmark", cis.WindowsCIS)
+	a.Register("cis", "CIS L1 security benchmark", cis.WindowsCIS)
 }

@@ -143,9 +143,9 @@ converge/
 │
 ├── cmd/converge/            # Cobra CLI
 │   ├── main.go              # Entry point, cross-platform blueprint registration
-│   ├── blueprints_windows.go # Registers windows, windows_cis
-│   ├── blueprints_linux.go  # Registers linux_cis
-│   ├── blueprints_darwin.go # Registers darwin_cis
+│   ├── blueprints_windows.go # Registers windows, cis
+│   ├── blueprints_linux.go  # Registers cis
+│   ├── blueprints_darwin.go # Registers cis
 │   └── ...                  # root.go, plan.go, apply.go, list.go, version.go
 │
 ├── blueprints/              # Cross-platform blueprints

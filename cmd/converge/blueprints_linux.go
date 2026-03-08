@@ -8,5 +8,5 @@ import (
 )
 
 func registerPlatformBlueprints(a *dsl.App) {
-	a.Register("linux_cis", "CIS Ubuntu Linux 24.04 LTS L1 benchmark", cis.LinuxCIS)
+	a.Register("cis", "CIS L1 security benchmark", cis.LinuxCIS)
 }
