@@ -12,6 +12,7 @@ import (
 	"github.com/TsekNet/converge/extensions"
 )
 
+// Apply creates or modifies the user via useradd/usermod.
 func (u *User) Apply(ctx context.Context) (*extensions.Result, error) {
 	_, err := lookupUser(u.Name)
 	if err != nil {
@@ -45,6 +46,7 @@ func (u *User) createUser(ctx context.Context) (*extensions.Result, error) {
 	return &extensions.Result{Changed: true, Status: extensions.StatusChanged, Message: "Created"}, nil
 }
 
+// modifyUser uses --append --groups to add groups without removing existing ones.
 func (u *User) modifyUser(ctx context.Context) (*extensions.Result, error) {
 	var args []string
 	if u.Shell != "" {
@@ -67,6 +69,7 @@ func (u *User) modifyUser(ctx context.Context) (*extensions.Result, error) {
 	return &extensions.Result{Changed: true, Status: extensions.StatusChanged, Message: "Modified"}, nil
 }
 
+// shellForUser reads the login shell from /etc/passwd via getent.
 func shellForUser(u *osuser.User) string {
 	cmd := exec.Command("getent", "passwd", u.Uid)
 	out, err := cmd.Output()

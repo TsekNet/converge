@@ -23,6 +23,7 @@ func (s Status) String() string {
 	}
 }
 
+// Change describes a single property that differs between current and desired state.
 type Change struct {
 	Property string
 	From     string
@@ -30,11 +31,13 @@ type Change struct {
 	Action   string // "add", "modify", "remove"
 }
 
+// State is returned by Check: InSync means no changes needed.
 type State struct {
 	InSync  bool
 	Changes []Change
 }
 
+// Result is returned by Apply: Changed indicates whether the system was modified.
 type Result struct {
 	Changed  bool
 	Status   Status

@@ -12,6 +12,7 @@ import (
 	"github.com/TsekNet/converge/extensions"
 )
 
+// Apply creates or modifies the user via "net user" / "net localgroup".
 func (u *User) Apply(ctx context.Context) (*extensions.Result, error) {
 	_, err := lookupUser(u.Name)
 	if err != nil {

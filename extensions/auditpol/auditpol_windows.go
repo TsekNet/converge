@@ -12,6 +12,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// advapi32.dll provides AuditQuerySystemPolicy/AuditSetSystemPolicy for
+// reading and writing advanced audit policy without auditpol.exe.
 var (
 	modAdvapi32 = windows.NewLazySystemDLL("advapi32.dll")
 
@@ -27,12 +29,14 @@ const (
 	auditingNone              = 0x0
 )
 
+// auditPolicyInformation maps to AUDIT_POLICY_INFORMATION from the Win32 API.
 type auditPolicyInformation struct {
 	AuditSubCategoryGuid windows.GUID
 	AuditingInformation  uint32
 	AuditCategoryGuid    windows.GUID
 }
 
+// Check queries the current audit flags for the subcategory and compares against desired.
 func (a *AuditPolicy) Check(_ context.Context) (*extensions.State, error) {
 	guid, ok := subcategoryGUIDs[strings.ToLower(a.Subcategory)]
 	if !ok {
@@ -68,6 +72,7 @@ func (a *AuditPolicy) Check(_ context.Context) (*extensions.State, error) {
 	}, nil
 }
 
+// Apply sets the audit flags for the subcategory via AuditSetSystemPolicy.
 func (a *AuditPolicy) Apply(_ context.Context) (*extensions.Result, error) {
 	guid, ok := subcategoryGUIDs[strings.ToLower(a.Subcategory)]
 	if !ok {

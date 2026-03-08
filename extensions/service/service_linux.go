@@ -11,6 +11,7 @@ import (
 	"github.com/TsekNet/converge/extensions"
 )
 
+// Check dispatches to the detected init system (currently systemd only).
 func (s *Service) Check(ctx context.Context) (*extensions.State, error) {
 	switch s.InitSystem {
 	case "systemd":
@@ -29,6 +30,7 @@ func (s *Service) Apply(ctx context.Context) (*extensions.Result, error) {
 	}
 }
 
+// checkSystemd uses "systemctl is-active" and "systemctl is-enabled" to detect drift.
 func (s *Service) checkSystemd(ctx context.Context) (*extensions.State, error) {
 	var changes []extensions.Change
 

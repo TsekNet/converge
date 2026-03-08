@@ -11,6 +11,7 @@ import (
 	"github.com/TsekNet/converge/extensions"
 )
 
+// File manages content, permissions, and ownership of a file on disk.
 type File struct {
 	Path    string
 	Content string
@@ -111,6 +112,7 @@ func (f *File) Apply(_ context.Context) (*extensions.Result, error) {
 	return &extensions.Result{Changed: true, Status: extensions.StatusChanged, Message: "Updated"}, nil
 }
 
+// diffContent produces a human-readable line-by-line diff, capped at 5 changes for readability.
 func diffContent(old, new string) []extensions.Change {
 	oldLines := strings.Split(strings.TrimRight(old, "\n"), "\n")
 	newLines := strings.Split(strings.TrimRight(new, "\n"), "\n")

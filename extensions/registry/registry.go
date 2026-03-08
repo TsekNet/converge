@@ -2,6 +2,8 @@ package registry
 
 import "fmt"
 
+// Registry manages a single Windows registry value. Check/Apply use the native
+// golang.org/x/sys/windows/registry API (no reg.exe).
 type Registry struct {
 	Key      string
 	Value    string

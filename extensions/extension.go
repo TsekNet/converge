@@ -2,6 +2,8 @@ package extensions
 
 import "context"
 
+// Extension is the core interface every resource type implements.
+// The engine calls Check to detect drift, then Apply to fix it.
 type Extension interface {
 	ID() string
 	Check(ctx context.Context) (*State, error)

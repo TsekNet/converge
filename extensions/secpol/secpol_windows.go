@@ -13,6 +13,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// netapi32.dll provides NetUserModalsGet/Set for reading and writing
+// local password and account lockout policy without secedit.exe.
 var (
 	modNetapi32 = windows.NewLazySystemDLL("netapi32.dll")
 
@@ -21,6 +23,7 @@ var (
 	procNetApiBufferFree = modNetapi32.NewProc("NetApiBufferFree")
 )
 
+// userModalsInfo0 maps to USER_MODALS_INFO_0 (info level 0 = password policy).
 type userModalsInfo0 struct {
 	MinPasswdLen    uint32
 	MaxPasswdAge    uint32
@@ -29,6 +32,7 @@ type userModalsInfo0 struct {
 	PasswordHistLen uint32
 }
 
+// userModalsInfo3 maps to USER_MODALS_INFO_3 (info level 3 = lockout policy).
 type userModalsInfo3 struct {
 	LockoutDuration    uint32
 	LockoutObservation uint32
@@ -111,6 +115,8 @@ func (s *SecurityPolicy) readPasswordPolicy() (string, error) {
 	}
 }
 
+// writePasswordPolicy does a read-modify-write: reads current struct, patches the target
+// field, then calls NetUserModalsSet to apply the full struct back.
 func (s *SecurityPolicy) writePasswordPolicy() error {
 	var buf *byte
 	ret, _, _ := procNetUserModalsGet.Call(0, 0, uintptr(unsafe.Pointer(&buf)))

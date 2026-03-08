@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
+// Check opens the registry key read-only and compares the current value against desired.
 func (r *Registry) Check(_ context.Context) (*extensions.State, error) {
 	root, path, err := parseKeyPath(r.Key)
 	if err != nil {
@@ -58,6 +59,7 @@ func (r *Registry) Check(_ context.Context) (*extensions.State, error) {
 	return &extensions.State{InSync: true}, nil
 }
 
+// Apply creates the key if needed and writes the value. For "absent" state, deletes the value.
 func (r *Registry) Apply(_ context.Context) (*extensions.Result, error) {
 	root, path, err := parseKeyPath(r.Key)
 	if err != nil {
@@ -141,6 +143,7 @@ func (r *Registry) writeValue(k registry.Key) error {
 	}
 }
 
+// normalizeType accepts both Go-style ("dword") and Win32-style ("REG_DWORD") type names.
 func normalizeType(t string) string {
 	s := strings.ToLower(t)
 	s = strings.TrimPrefix(s, "reg_")
@@ -156,6 +159,7 @@ func normalizeType(t string) string {
 	}
 }
 
+// parseKeyPath splits "HKLM\Software\..." into a root handle and subkey path.
 func parseKeyPath(full string) (registry.Key, string, error) {
 	idx := strings.IndexByte(full, '\\')
 	if idx < 0 {

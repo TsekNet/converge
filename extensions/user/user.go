@@ -9,6 +9,8 @@ import (
 	"github.com/TsekNet/converge/extensions"
 )
 
+// User ensures a local user account exists with the specified groups and shell.
+// Apply is platform-specific (useradd on Linux, dscl on macOS, net user on Windows).
 type User struct {
 	Name     string
 	Groups   []string

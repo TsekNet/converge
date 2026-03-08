@@ -7,6 +7,7 @@ import (
 	"github.com/TsekNet/converge/extensions"
 )
 
+// PackageManager abstracts OS-specific package operations (apt, brew, choco, etc.).
 type PackageManager interface {
 	Name() string
 	IsInstalled(ctx context.Context, name string) (bool, error)
@@ -87,6 +88,7 @@ func (p *Package) Apply(ctx context.Context) (*extensions.Result, error) {
 	return &extensions.Result{Changed: true, Status: extensions.StatusChanged, Message: msg}, nil
 }
 
+// detectManager maps the platform-detected package manager name to its implementation.
 func detectManager(name string) PackageManager {
 	switch name {
 	case "apt":

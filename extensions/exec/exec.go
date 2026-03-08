@@ -11,6 +11,7 @@ import (
 	"github.com/TsekNet/converge/extensions"
 )
 
+// Exec runs an arbitrary command. Use OnlyIf as a guard: if the guard exits 0, the resource is already in sync.
 type Exec struct {
 	Name       string
 	Command    string
@@ -31,6 +32,7 @@ func (e *Exec) ID() string       { return fmt.Sprintf("exec:%s", e.Name) }
 func (e *Exec) String() string   { return fmt.Sprintf("Exec %s", e.Name) }
 func (e *Exec) IsCritical() bool { return e.Critical }
 
+// checkGuard runs the OnlyIf command. Exit 0 = in sync (skip Apply), non-zero = needs Apply.
 func (e *Exec) checkGuard(ctx context.Context) (*extensions.State, error) {
 	if e.OnlyIf == "" {
 		return &extensions.State{InSync: false}, nil

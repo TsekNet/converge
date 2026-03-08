@@ -2,6 +2,8 @@ package sysctl
 
 import "fmt"
 
+// Sysctl manages a Linux kernel parameter. Check reads from /proc/sys/,
+// Apply writes the value and optionally persists it to /etc/sysctl.d/.
 type Sysctl struct {
 	Key      string
 	Value    string

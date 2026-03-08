@@ -12,6 +12,7 @@ import (
 	goplist "howett.net/plist"
 )
 
+// Check reads the plist file and compares the key's current value against desired.
 func (p *Plist) Check(_ context.Context) (*extensions.State, error) {
 	current, err := p.readKey()
 	if err != nil {
@@ -40,6 +41,8 @@ func (p *Plist) Check(_ context.Context) (*extensions.State, error) {
 	}, nil
 }
 
+// Apply does a read-modify-write on the plist file: loads existing keys,
+// sets the target key, and re-encodes as binary plist.
 func (p *Plist) Apply(_ context.Context) (*extensions.Result, error) {
 	path := p.plistPath()
 	data := make(map[string]any)
@@ -87,6 +90,7 @@ func (p *Plist) readKey() (any, error) {
 	return val, nil
 }
 
+// plistPath returns the system-wide or per-user plist path based on the Host flag.
 func (p *Plist) plistPath() string {
 	if p.Host {
 		return filepath.Join("/Library/Preferences", p.Domain+".plist")

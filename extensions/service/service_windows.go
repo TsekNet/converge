@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
+// Check connects to the Windows Service Control Manager and compares current state/startup type.
 func (s *Service) Check(_ context.Context) (*extensions.State, error) {
 	m, err := mgr.Connect()
 	if err != nil {
@@ -58,6 +59,7 @@ func (s *Service) Check(_ context.Context) (*extensions.State, error) {
 	return &extensions.State{InSync: len(changes) == 0, Changes: changes}, nil
 }
 
+// Apply updates startup type via UpdateConfig and starts/stops the service as needed.
 func (s *Service) Apply(_ context.Context) (*extensions.Result, error) {
 	m, err := mgr.Connect()
 	if err != nil {
@@ -117,6 +119,7 @@ func (s *Service) Apply(_ context.Context) (*extensions.Result, error) {
 	return &extensions.Result{Changed: true, Status: extensions.StatusChanged, Message: msg}, nil
 }
 
+// startTypeToString maps SCM start type constants to human-readable names.
 func startTypeToString(st uint32, delayed bool) string {
 	switch st {
 	case mgr.StartAutomatic:
@@ -148,6 +151,7 @@ func parseStartupType(s string) (uint32, bool) {
 	}
 }
 
+// waitForState polls the service until it reaches the desired state or times out.
 func waitForState(handle *mgr.Service, desired svc.State, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {

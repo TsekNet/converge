@@ -8,6 +8,7 @@ import (
 	"github.com/TsekNet/converge/extensions"
 )
 
+// launchd support is not yet implemented; Check/Apply are no-ops.
 func (s *Service) Check(_ context.Context) (*extensions.State, error) {
 	return &extensions.State{InSync: true}, nil
 }

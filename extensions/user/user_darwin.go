@@ -12,6 +12,7 @@ import (
 	"github.com/TsekNet/converge/extensions"
 )
 
+// Apply creates or modifies the user via macOS Directory Services (dscl).
 func (u *User) Apply(ctx context.Context) (*extensions.Result, error) {
 	_, err := lookupUser(u.Name)
 	if err != nil {
@@ -46,6 +47,7 @@ func (u *User) modifyUser(ctx context.Context) (*extensions.Result, error) {
 	return &extensions.Result{Changed: false, Status: extensions.StatusOK, Message: "OK"}, nil
 }
 
+// shellForUser reads the login shell from the local directory via dscl.
 func shellForUser(u *osuser.User) string {
 	cmd := exec.Command("dscl", ".", "-read", fmt.Sprintf("/Users/%s", u.Name), "UserShell")
 	out, err := cmd.Output()

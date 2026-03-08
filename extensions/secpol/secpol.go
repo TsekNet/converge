@@ -2,6 +2,8 @@ package secpol
 
 import "fmt"
 
+// SecurityPolicy enforces Windows local security policy (password and lockout settings)
+// via the NetUserModalsGet/Set Win32 API (no secedit.exe).
 type SecurityPolicy struct {
 	Category string
 	Key      string

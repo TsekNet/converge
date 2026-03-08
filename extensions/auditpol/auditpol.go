@@ -2,6 +2,8 @@ package auditpol
 
 import "fmt"
 
+// AuditPolicy configures Windows advanced audit policy subcategories
+// via AuditQuerySystemPolicy/AuditSetSystemPolicy (no auditpol.exe).
 type AuditPolicy struct {
 	Subcategory string
 	Success     bool

@@ -2,6 +2,8 @@ package plist
 
 import "fmt"
 
+// Plist manages a macOS preference domain key. Check/Apply use howett.net/plist
+// for native binary plist encoding (no defaults command).
 type Plist struct {
 	Domain   string
 	Key      string
