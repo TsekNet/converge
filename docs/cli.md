@@ -41,7 +41,18 @@ converge list --extensions
 | `--blueprints` | `-b` | Show only blueprints |
 | `--extensions` | `-e` | Show only extensions |
 
-Built-in blueprints: `workstation`, `linux`, `darwin`, `windows`, `windows_cis`, `linux_server`.
+Built-in blueprints vary by platform:
+
+| Blueprint | Platform | Description |
+|-----------|----------|-------------|
+| `workstation` | All | Base workstation setup |
+| `linux` | Linux | Linux-specific defaults |
+| `linux_server` | Linux | Hardened Linux server |
+| `darwin` | macOS | macOS-specific defaults |
+| `windows` | Windows | Windows-specific defaults |
+| `linux_cis` | Linux | CIS Ubuntu 24.04 LTS L1 Server |
+| `darwin_cis` | macOS | CIS macOS 15 Sequoia L1 |
+| `windows_cis` | Windows | CIS Windows 11 Enterprise L1 |
 
 ### converge version
 
@@ -52,9 +63,9 @@ converge version
 ```
 
 ```
-converge v0.0.1
+converge v0.0.2
   commit: abc1234
-  built:  2026-02-19T00:00:00Z
+  built:  2026-03-08T00:00:00Z
   go:     go1.26.0
   os:     linux/amd64
 ```
@@ -108,14 +119,6 @@ By default, converge exits 0 on success (including changes applied and plan pend
 
 ---
 
-## Features
-
-- **Parallel execution:** Use `--parallel N` to run up to N resources concurrently. Default is sequential.
-- **Per-resource timeout:** `--timeout 2m` sets a deadline for each resource's Check/Apply cycle.
-- **Critical resource halting:** Resources with `Critical: true` (default) halt the run on failure. Set `Critical: false` on best-effort resources to log and continue.
-
----
-
 ## Examples
 
 ```bash
@@ -144,7 +147,13 @@ converge list -b
 # List extensions
 converge list -e
 
-# CIS Windows hardening
+# CIS hardening (platform-specific)
+converge plan linux_cis
+sudo converge apply linux_cis
+
 converge plan windows_cis
-sudo converge apply windows_cis
+converge apply windows_cis       # run as Administrator
+
+converge plan darwin_cis
+sudo converge apply darwin_cis
 ```

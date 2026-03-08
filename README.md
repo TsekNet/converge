@@ -63,7 +63,7 @@ converge plan my-server --detailed-exit-codes  # granular exit codes for CI
 | **Compiled blueprints** | Go code: catch misconfigurations at build time, not at 2 AM |
 | **Zero dependencies** | Single static binary, no Ruby/Python/JVM runtime |
 | **Cross-platform** | Linux, macOS, Windows from one codebase with build tags |
-| **Native OS APIs** | Win32 registry/SCM/LSA, Linux sysctl via `/proc/sys`, macOS plist — no shelling out |
+| **Native OS APIs** | Win32 registry/SCM/LSA, Linux sysctl via `/proc/sys`, macOS plist via `howett.net/plist` -- no shelling out |
 | **CIS benchmarks** | Built-in CIS L1 blueprints for [Windows 11](blueprints/cis/cis_windows.go), [Ubuntu 24.04](blueprints/cis/cis_linux.go), and [macOS 15](blueprints/cis/cis_darwin.go) |
 | **Plan / Apply** | Dry-run any blueprint before making changes |
 | **Parallel execution** | Concurrent resource application with configurable parallelism |
@@ -85,11 +85,11 @@ converge plan my-server --detailed-exit-codes  # granular exit codes for CI
 
 | Doc | Description |
 |-----|-------------|
-| [Design](docs/design.md) | Philosophy, architecture, engine flow |
-| [Guide](docs/guide.md) | Blueprint writing, resource reference |
-| [CLI](docs/cli.md) | Commands, flags, exit codes |
-| [Extending](docs/extending.md) | Adding new extensions |
-| [Blueprints](blueprints/) | Built-in blueprints |
+| [Design](docs/design.md) | Philosophy, architecture, engine flow, native API strategy |
+| [Guide](docs/guide.md) | Blueprint writing, composition, testing, full resource reference |
+| [CLI](docs/cli.md) | Commands, flags, exit codes, output formats |
+| [Extending](docs/extending.md) | Adding new extensions and platform-specific resources |
+| [Blueprints](blueprints/) | Built-in blueprints including [CIS benchmarks](blueprints/cis/) |
 
 ## Contributing
 

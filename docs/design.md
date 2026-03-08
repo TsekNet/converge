@@ -109,24 +109,30 @@ type Resource interface {
 ```
 converge/
 ├── dsl/                     # Public SDK (import "github.com/TsekNet/converge/dsl")
-│   ├── converge.go          # State enums (Present, Absent, Running, Stopped)
+│   ├── dsl.go               # Blueprint type, state enums, all Opts structs
 │   ├── app.go               # App: New(), Register(), Execute(), RunPlan(), RunApply()
-│   ├── blueprint.go         # Blueprint func type: func(*Run)
-│   ├── opts.go              # FileOpts, PackageOpts, ServiceOpts, ExecOpts, UserOpts, RegistryOpts, SecurityPolicyOpts, AuditPolicyOpts
-│   ├── run.go               # Run: File(), Package(), Service(), Exec(), User(), Registry(), SecurityPolicy(), AuditPolicy(), Include()
-│   └── resources.go         # Wires DSL opts to real extension implementations
+│   ├── run.go               # Run: cross-platform methods (File, Package, Service, Exec, User, Include)
+│   ├── run_windows.go       # Registry(), SecurityPolicy(), AuditPolicy()
+│   ├── run_linux.go         # Sysctl()
+│   ├── run_darwin.go        # Plist()
+│   ├── resources.go         # Factory functions for cross-platform extensions
+│   ├── resources_windows.go # Factory functions for Windows extensions
+│   ├── resources_linux.go   # Factory functions for Linux extensions
+│   └── resources_darwin.go  # Factory functions for macOS extensions
 │
 ├── extensions/              # Public, community-extensible
 │   ├── extension.go         # Extension interface: ID(), Check(), Apply(), String()
 │   ├── state.go             # State, Change, Result types
-│   ├── file/                # file.go, file_test.go
-│   ├── exec/                # exec.go, exec_test.go
-│   ├── pkg/                 # pkg.go (interface), apt.go, brew.go, choco.go
-│   ├── service/             # service.go, service_linux.go, service_darwin.go, service_windows.go
-│   ├── user/                # user.go (shared), user_linux.go, user_darwin.go, user_windows.go
-│   ├── registry/            # registry_stub.go (linux||darwin), registry_windows.go
-│   ├── secpol/              # secpol_stub.go (linux||darwin), secpol_windows.go
-│   └── auditpol/            # auditpol_stub.go (linux||darwin), auditpol_windows.go
+│   ├── file/                # File content, permissions, ownership
+│   ├── exec/                # Arbitrary command execution with guards and retries
+│   ├── pkg/                 # Package management (apt, brew, choco, dnf, yum, zypper, apk, pacman, winget)
+│   ├── service/             # Service management (systemd, launchd, Windows SCM)
+│   ├── user/                # Local user accounts (useradd, dscl, net user)
+│   ├── registry/            # Windows registry via golang.org/x/sys/windows/registry
+│   ├── secpol/              # Windows security policy via NetUserModalsGet/Set
+│   ├── auditpol/            # Windows audit policy via AuditQuerySystemPolicy/AuditSetSystemPolicy
+│   ├── sysctl/              # Linux kernel parameters via /proc/sys/
+│   └── plist/               # macOS preference domains via howett.net/plist
 │
 ├── internal/
 │   ├── engine/              # Plan/apply orchestration, duplicate detection
@@ -135,19 +141,31 @@ converge/
 │   ├── logging/             # google/deck: syslog (Linux), eventlog (Windows), stderr
 │   └── version/             # Version vars set by ldflags
 │
-├── cmd/converge/            # Cobra CLI: main.go, root.go, plan.go, apply.go, list.go, version.go
+├── cmd/converge/            # Cobra CLI
+│   ├── main.go              # Entry point, cross-platform blueprint registration
+│   ├── blueprints_windows.go # Registers windows, windows_cis
+│   ├── blueprints_linux.go  # Registers linux_cis
+│   ├── blueprints_darwin.go # Registers darwin_cis
+│   └── ...                  # root.go, plan.go, apply.go, list.go, version.go
 │
-├── blueprints/              # All blueprints in a single package
-│   ├── workstation.go
-│   ├── linux.go
-│   ├── darwin.go
-│   ├── windows.go
-│   ├── windows_cis.go
-│   └── linux_server.go
+├── blueprints/              # Cross-platform blueprints
+│   ├── workstation.go       # Base workstation setup
+│   ├── linux.go             # Linux-specific defaults
+│   ├── linux_server.go      # Hardened Linux server
+│   ├── darwin.go            # macOS-specific defaults
+│   ├── windows.go           # Windows-specific defaults (build-tagged)
+│   └── cis/                 # CIS L1 benchmark blueprints
+│       ├── cis_windows.go   # CIS Windows 11 Enterprise L1
+│       ├── cis_linux.go     # CIS Ubuntu 24.04 LTS L1 Server
+│       └── cis_darwin.go    # CIS macOS 15 Sequoia L1
 │
-├── assets/                  # Logo, demo GIF, vhs-demo.go, demo.tape (see assets/README.md)
+├── assets/                  # Logo, demo GIF, vhs-demo.go, demo.tape
 │
-└── docs/                    # Documentation (design, guide, CLI, extending)
+└── docs/                    # You are here
+    ├── design.md            # Philosophy, architecture, engine flow
+    ├── guide.md             # Blueprint writing, resource reference
+    ├── cli.md               # Commands, flags, exit codes
+    └── extending.md         # Adding new extensions
 ```
 
 **Boundary rules:**
@@ -177,15 +195,35 @@ type Extension interface {
 - **Apply()** -- mutates the system. Requires root. Only called when Check() reports out-of-sync.
 - **String()** -- human-readable label for output (e.g. `File /etc/motd`).
 
-Platform-specific extensions split code using Go build tags:
+### Platform-Specific Code
+
+Platform-specific code uses Go build tags. There are no stubs or no-op shims -- if a platform doesn't need an extension, the DSL simply doesn't expose it.
+
+**Extension pattern** -- shared struct in a plain file, Check/Apply in build-tagged files:
 
 ```
-extensions/user/
-├── user.go            # Shared: struct, New(), ID(), String(), Check()
-├── user_linux.go      # //go:build linux  -- Apply() using useradd/usermod
-├── user_darwin.go     # //go:build darwin -- Apply() using dscl
-└── user_windows.go    # //go:build windows  -- Apply() using net user
+extensions/service/
+├── service.go            # Shared: struct, New(), ID(), String(), IsCritical()
+├── service_linux.go      # //go:build linux  -- Check/Apply via systemctl
+├── service_darwin.go     # //go:build darwin -- Check/Apply (launchd stub)
+└── service_windows.go    # //go:build windows -- Check/Apply via SCM
 ```
+
+**DSL pattern** -- platform-specific methods and factory functions in build-tagged files:
+
+```
+dsl/
+├── run.go                # Cross-platform: File(), Package(), Service(), Exec(), User()
+├── run_windows.go        # Registry(), SecurityPolicy(), AuditPolicy()
+├── run_linux.go          # Sysctl()
+├── run_darwin.go         # Plist()
+├── resources.go          # Factories for cross-platform extensions
+├── resources_windows.go  # Factories for Windows extensions
+├── resources_linux.go    # Factories for Linux extensions
+└── resources_darwin.go   # Factories for macOS extensions
+```
+
+This means a Linux blueprint can call `r.Sysctl()` but not `r.Registry()`. The compiler enforces platform correctness -- no runtime "skipped (not Windows)" messages.
 
 ### Engine Flow
 
@@ -253,6 +291,21 @@ Uses [google/deck](https://github.com/google/deck) for structured logging:
 - **Linux**: syslog (`journalctl -t converge`)
 - **Windows**: Windows Event Log (Event Viewer > Application)
 - **stderr**: only with `--verbose` flag
+
+---
+
+## Native OS APIs
+
+Converge avoids shelling out to executables wherever a native API exists. This eliminates parsing fragile command output, avoids PATH/locale issues, and makes Check() truly read-only (no accidental side effects from exec).
+
+| Resource | Platform | API | What it replaces |
+|----------|----------|-----|-----------------|
+| Registry | Windows | `golang.org/x/sys/windows/registry` | `reg.exe` |
+| Service | Windows | `golang.org/x/sys/windows/svc/mgr` | `sc.exe` |
+| SecurityPolicy | Windows | `netapi32.dll` `NetUserModalsGet/Set` | `secedit.exe` |
+| AuditPolicy | Windows | `advapi32.dll` `AuditQuerySystemPolicy/AuditSetSystemPolicy` | `auditpol.exe` |
+| Sysctl | Linux | Direct `/proc/sys/` file I/O | `sysctl` command |
+| Plist | macOS | `howett.net/plist` (binary plist encode/decode) | `defaults` command |
 
 ---
 

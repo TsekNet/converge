@@ -81,18 +81,30 @@ func Blueprint(r *dsl.Run) {
             Content: "Linux host managed by Converge\n",
         })
     }
-
-    if p.OS == "windows" {
-        r.Registry(`HKLM\SOFTWARE\MyOrg\Converge`, dsl.RegistryOpts{
-            Value: "Managed",
-            Type:  "string",
-            Data:  "true",
-        })
-    }
 }
 ```
 
 `r.Platform()` returns a `platform.Info` struct with `OS`, `Distro`, `Arch`, `PkgManager`, and `InitSystem`.
+
+For platform-specific resources like `r.Registry()` (Windows), `r.Sysctl()` (Linux), or `r.Plist()` (macOS), use Go build tags on the blueprint file itself:
+
+```go
+//go:build windows
+
+package blueprints
+
+import "github.com/TsekNet/converge/dsl"
+
+func Windows(r *dsl.Run) {
+    r.Registry(`HKLM\SOFTWARE\MyOrg\Converge`, dsl.RegistryOpts{
+        Value: "Managed",
+        Type:  "string",
+        Data:  "true",
+    })
+}
+```
+
+The compiler enforces this -- you can't call `r.Registry()` from a Linux-tagged file. No runtime "skipped" messages.
 
 ---
 
@@ -191,8 +203,7 @@ r.Package(name string, opts dsl.PackageOpts)
 | Linux (Alpine) | `apk` |
 | Linux (Arch) | `pacman` |
 | macOS | `brew` |
-| Windows | `choco` |
-| Windows | `winget` |
+| Windows | `choco` / `winget` |
 
 **Idempotency:** Queries the package manager before acting. Installing an already-installed package or removing a missing one is a no-op.
 
@@ -255,13 +266,13 @@ r.User(name string, opts dsl.UserOpts)
 |----------|---------|
 | Linux | `useradd` / `usermod` |
 | macOS | `dscl` / Directory Services |
-| Windows | `net user` / Win32 API (`Shell` and `System` ignored) |
+| Windows | `net user` / `net localgroup` (`Shell` and `System` ignored) |
 
 **Idempotency:** Creates user if missing. Modifies only divergent attributes if user exists.
 
-### Registry
+### Registry (Windows only)
 
-Manage Windows registry keys and values via native Win32 API (`golang.org/x/sys/windows/registry`). On non-Windows platforms, this resource is a silent no-op.
+Manage Windows registry keys and values via native Win32 API. Available only in `//go:build windows` blueprints.
 
 ```go
 r.Registry(key string, opts dsl.RegistryOpts)
@@ -278,13 +289,13 @@ The `key` is the full registry path, e.g., `HKLM\SOFTWARE\MyApp`.
 
 **Supported root keys:** `HKLM`, `HKCU`, `HKCR`, `HKU`, `HKCC` (and their long forms like `HKEY_LOCAL_MACHINE`).
 
-**Platform behavior:** Full support on Windows using native Win32 registry API. No-op on Linux/macOS.
+**API:** `golang.org/x/sys/windows/registry` -- no `reg.exe`.
 
 **Idempotency:** Reads current value via type-appropriate getter and compares. Creates intermediate keys if needed without disturbing existing sibling values.
 
-### SecurityPolicy
+### SecurityPolicy (Windows only)
 
-Manage Windows local security policy settings via native Win32 APIs (`NetUserModalsGet/Set` from `netapi32.dll`). On non-Windows platforms, this resource is a silent no-op.
+Manage Windows local security policy settings via native Win32 APIs. Available only in `//go:build windows` blueprints.
 
 ```go
 r.SecurityPolicy(name string, opts dsl.SecurityPolicyOpts)
@@ -314,11 +325,11 @@ r.SecurityPolicy(name string, opts dsl.SecurityPolicyOpts)
 | `LockoutDuration` | Lockout duration (seconds) |
 | `LockoutObservationWindow` | Observation window (seconds) |
 
-**Platform behavior:** Full support on Windows. No-op on Linux/macOS.
+**API:** `netapi32.dll` `NetUserModalsGet/Set` -- no `secedit.exe`.
 
-### AuditPolicy
+### AuditPolicy (Windows only)
 
-Manage Windows advanced audit policy via native Win32 APIs (`AuditQuerySystemPolicy/AuditSetSystemPolicy` from `advapi32.dll`). On non-Windows platforms, this resource is a silent no-op.
+Manage Windows advanced audit policy via native Win32 APIs. Available only in `//go:build windows` blueprints.
 
 ```go
 r.AuditPolicy(name string, opts dsl.AuditPolicyOpts)
@@ -344,4 +355,44 @@ r.AuditPolicy(name string, opts dsl.AuditPolicyOpts)
 | **Privilege Use** | Non Sensitive Privilege Use, Other Privilege Use Events, Sensitive Privilege Use |
 | **System** | IPsec Driver, Other System Events, Security State Change, Security System Extension, System Integrity |
 
-**Platform behavior:** Full support on Windows. No-op on Linux/macOS.
+**API:** `advapi32.dll` `AuditQuerySystemPolicy/AuditSetSystemPolicy` -- no `auditpol.exe`.
+
+### Sysctl (Linux only)
+
+Manage Linux kernel parameters via `/proc/sys/`. Available only in `//go:build linux` blueprints.
+
+```go
+r.Sysctl(key string, opts dsl.SysctlOpts)
+```
+
+The `key` uses dotted notation, e.g., `net.ipv4.ip_forward`.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `Value` | `string` | `""` | Desired kernel parameter value. Required. |
+| `Persist` | `bool` | `true` | If `true`, writes to `/etc/sysctl.d/99-converge.conf` so the setting survives reboots. |
+
+**API:** Direct file I/O to `/proc/sys/` -- no `sysctl` command.
+
+**Idempotency:** Reads the live kernel value from `/proc/sys/<key>` and compares. Writes only on mismatch.
+
+### Plist (macOS only)
+
+Manage macOS preference domain keys via native binary plist encoding. Available only in `//go:build darwin` blueprints.
+
+```go
+r.Plist(domain string, opts dsl.PlistOpts)
+```
+
+The `domain` is the preference domain, e.g., `com.apple.screensaver`.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `Key` | `string` | `""` | The preference key to set. Required. |
+| `Value` | `any` | `nil` | Desired value. Type inferred from Go type or `Type` field. |
+| `Type` | `string` | `""` | Explicit type hint: `"bool"`, `"int"`, `"float"`, `"string"`. |
+| `Host` | `bool` | `false` | If `true`, targets `/Library/Preferences` (system-wide). If `false`, targets `~/Library/Preferences`. |
+
+**API:** `howett.net/plist` for binary plist encode/decode -- no `defaults` command.
+
+**Idempotency:** Reads the plist file, decodes, and compares the key's current value. Writes only on mismatch using read-modify-write to preserve other keys.

@@ -21,6 +21,14 @@ type Extension interface {
 - `Apply()` makes changes. Requires root.
 - `ID()` returns a unique identifier like `file:/etc/motd` or `package:git`.
 
+Optionally implement `CriticalResource` to control whether failure halts the run:
+
+```go
+type CriticalResource interface {
+    IsCritical() bool
+}
+```
+
 ---
 
 ## Example: Adding a New Package Manager (dnf)
@@ -125,54 +133,81 @@ extensions/
 ├── extension.go          # Extension interface (don't modify)
 ├── state.go              # State/Change/Result types (don't modify)
 ├── file/                 # File management
-├── exec/                 # Command execution
+├── exec/                 # Command execution with guards and retries
 ├── pkg/                  # Package management (add new managers here)
 ├── service/              # Service management (platform build tags)
 ├── user/                 # User/group management
 ├── registry/             # Windows registry (native Win32 API)
-├── secpol/               # Windows security policy (NetUserModalsGet/Set, LSA)
-└── auditpol/             # Windows audit policy (AuditQuerySystemPolicy/AuditSetSystemPolicy)
+├── secpol/               # Windows security policy (NetUserModalsGet/Set)
+├── auditpol/             # Windows audit policy (AuditQuerySystemPolicy/AuditSetSystemPolicy)
+├── sysctl/               # Linux kernel parameters (direct /proc/sys/ I/O)
+└── plist/                # macOS preference domains (howett.net/plist)
 ```
 
 ---
 
 ## Platform-Specific Extensions (Build Tags)
 
-Use Go build tags to split platform-specific code. The pattern:
+Use Go build tags to split platform-specific code. There are no stubs -- if a platform doesn't need an extension, the DSL simply doesn't expose it.
+
+### Extension layer: shared struct + build-tagged Check/Apply
 
 ```
 extensions/service/
 ├── service.go            # Shared: struct, New(), ID(), String(), IsCritical()
-├── service_linux.go      # //go:build linux  -- Check/Apply via systemd
-├── service_darwin.go     # //go:build darwin -- stub
-├── service_windows.go    # //go:build windows  -- Check/Apply via svc/mgr
-└── service_test.go       # Tests (platform-gated where needed)
+├── service_linux.go      # //go:build linux  -- Check/Apply via systemctl
+├── service_darwin.go     # //go:build darwin -- Check/Apply via launchd
+└── service_windows.go    # //go:build windows -- Check/Apply via SCM
 ```
 
 **Rules:**
-1. The struct definition and `New()` constructor stay in the shared file
+1. The struct definition and `New()` constructor stay in the shared file (no build tag)
 2. `Check()` and `Apply()` go in build-tagged files (one per platform)
 3. Helper functions used only by one platform go in that platform's file
 4. Windows extensions should use native Win32 APIs (via `golang.org/x/sys/windows` or `windows.NewLazySystemDLL`), not shell out to executables
 
-**Example: no-op stub for unsupported platform**
+### DSL layer: build-tagged methods and factories
 
-If an extension only makes sense on one OS (e.g., Windows Registry), provide a no-op stub:
+If your extension is platform-specific (like Registry or Sysctl), you also need to wire it into the DSL:
+
+```
+dsl/
+├── run.go                # Cross-platform methods: File(), Package(), Service(), Exec(), User()
+├── run_windows.go        # Registry(), SecurityPolicy(), AuditPolicy()
+├── run_linux.go          # Sysctl()
+├── run_darwin.go         # Plist()
+├── resources.go          # Factories for cross-platform extensions
+├── resources_windows.go  # Factories for Windows extensions
+├── resources_linux.go    # Factories for Linux extensions
+└── resources_darwin.go   # Factories for macOS extensions
+```
+
+**To add a platform-specific DSL method:**
+
+1. Add the `Opts` struct to `dsl/dsl.go` (no build tag -- it's just a data type)
+2. Add the `r.MyResource()` method to the appropriate `dsl/run_<platform>.go`
+3. Add the `newMyResourceExtension()` factory to the appropriate `dsl/resources_<platform>.go`
+4. Import your extension package in the factory file
+
+The compiler enforces correctness: a Linux blueprint can call `r.Sysctl()` but not `r.Registry()`. No runtime "skipped" messages, no stubs.
+
+### Blueprint layer: build-tagged files
+
+If a blueprint calls platform-specific DSL methods, the blueprint file itself needs a build tag:
 
 ```go
-// registry_stub.go
-//go:build linux || darwin
+//go:build windows
 
-func (r *Registry) Check(_ context.Context) (*extensions.State, error) {
-    return &extensions.State{InSync: true}, nil  // always "in sync" = skip
-}
+package cis
 
-func (r *Registry) Apply(_ context.Context) (*extensions.Result, error) {
-    return &extensions.Result{Changed: false, Status: extensions.StatusOK, Message: "Skipped (not Windows)"}, nil
+import "github.com/TsekNet/converge/dsl"
+
+func WindowsCIS(r *dsl.Run) {
+    r.Registry(`HKLM\...`, dsl.RegistryOpts{...})
 }
 ```
 
-**Testing platform-specific code:**
+### Testing platform-specific code
 
 ```go
 func TestUser_Apply(t *testing.T) {
@@ -190,5 +225,6 @@ func TestUser_Apply(t *testing.T) {
 - Keep extensions stateless -- all state comes from Check()
 - Use `context.Context` for cancellation and timeouts
 - Wrap errors with `fmt.Errorf("...: %w", err)` for debugging
-- No-op stubs should return `InSync: true` (skip) not `InSync: false` (false alarm)
 - For Windows: prefer `golang.org/x/sys/windows/registry`, `golang.org/x/sys/windows/svc/mgr`, and `windows.NewLazySystemDLL` over `exec.Command`
+- For Linux: prefer direct file I/O (`/proc/sys/`, `/etc/sysctl.d/`) over shelling out
+- For macOS: prefer `howett.net/plist` for plist files over the `defaults` command

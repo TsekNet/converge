@@ -14,10 +14,11 @@ Requires Go 1.26+. No other dependencies.
 
 | Directory | Visibility | Purpose |
 |-----------|-----------|---------|
-| [`dsl/`](dsl/) | Public | SDK for blueprint authors (Run, opts, enums) |
-| [`extensions/`](extensions/) | Public | OS interaction -- [file](extensions/file/), [pkg](extensions/pkg/), [service](extensions/service/), [exec](extensions/exec/), [user](extensions/user/), [registry](extensions/registry/) |
+| [`dsl/`](dsl/) | Public | SDK for blueprint authors (Run, opts, enums). Platform-specific methods in build-tagged files. |
+| [`extensions/`](extensions/) | Public | OS interaction -- [file](extensions/file/), [pkg](extensions/pkg/), [service](extensions/service/), [exec](extensions/exec/), [user](extensions/user/), [registry](extensions/registry/), [secpol](extensions/secpol/), [auditpol](extensions/auditpol/), [sysctl](extensions/sysctl/), [plist](extensions/plist/) |
+| [`blueprints/`](blueprints/) | Public | Built-in blueprints including [CIS benchmarks](blueprints/cis/) |
 | [`internal/`](internal/) | Private | [Engine](internal/engine/), [output](internal/output/), [platform detection](internal/platform/), [logging](internal/logging/) |
-| [`cmd/converge/`](cmd/converge/) | Binary | Cobra CLI entry point |
+| [`cmd/converge/`](cmd/converge/) | Binary | Cobra CLI entry point with build-tagged blueprint registration |
 
 ## Adding an Extension
 
@@ -30,6 +31,8 @@ Short version: implement the [`Extension` interface](extensions/extension.go), d
 - **Go 1.26** -- use `slices`, `maps`, range-over-int
 - **Table-driven tests** everywhere
 - **Build tags** -- use `_linux`, `_darwin`, `_windows` (not `_unix` or `!windows`)
+- **No stubs** -- platform-specific DSL methods live in build-tagged files; if a platform doesn't need an extension, the DSL doesn't expose it
+- **Native APIs** -- prefer `golang.org/x/sys/windows`, `/proc/sys/`, `howett.net/plist` over shelling out
 - **Error wrapping** with `fmt.Errorf("...: %w", err)`
 - **Logging** via [google/deck](https://github.com/google/deck) -- syslog on Linux, Event Log on Windows
 - **Builds** via [GoReleaser](https://goreleaser.com/) -- see [.goreleaser.yml](.goreleaser.yml)
@@ -48,6 +51,6 @@ Short version: implement the [`Extension` interface](extensions/extension.go), d
 Tag and push -- the [release workflow](.github/workflows/release.yml) builds MSI, deb, and pkg installers:
 
 ```bash
-git tag v0.0.2
-git push origin v0.0.2
+git tag v0.0.3
+git push origin v0.0.3
 ```
