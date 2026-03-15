@@ -74,7 +74,7 @@ One error handling pattern (the `Critical` flag). One way to include shared logi
 | `apply` | root / SYSTEM | None | Applies changes where `Check()` reports drift |
 
 - **No network by default.** Zero network calls during execution. All configuration is compiled in or read from local disk.
-- **No secrets in code.** Secrets come from AES-256-GCM encrypted config values via `r.Secret()`. Encrypted values use the `ENC[AES256:...]` format and are decrypted at runtime with a high-entropy key provided via `SetConfigKey()`, typically sourced from an environment variable. Decryption is fail-closed: missing keys or corrupted ciphertext return empty strings, never raw ciphertext.
+- **No secrets in code.** Secrets come from AES-256-GCM encrypted config values via `r.Secret()`. Encrypted values use the `ENC[AES256:...]` format and are decrypted at runtime with a high-entropy key provided via `SetConfigKey()`, compiled into the binary at build time. No external key files, no environment variables. Decryption is fail-closed: missing keys or corrupted ciphertext return empty strings, never raw ciphertext.
 
 ---
 

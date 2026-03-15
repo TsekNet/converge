@@ -24,9 +24,9 @@ type Firewall struct {
 	Critical  bool
 }
 
+// validName must never allow '|' or '=' to prevent Windows firewall rule injection.
 var validName = regexp.MustCompile(`^[a-zA-Z0-9 _-]+$`)
 
-// validName must never allow '|' or '=' to prevent Windows firewall rule injection.
 var validProtocols = map[string]bool{"tcp": true, "udp": true}
 var validDirections = map[string]bool{"inbound": true, "outbound": true}
 var validActions = map[string]bool{"allow": true, "block": true}
