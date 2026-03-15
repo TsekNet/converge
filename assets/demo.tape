@@ -34,10 +34,3 @@ Type "converge plan workstation"
 Sleep 500ms
 Enter
 Sleep 8s
-
-Sleep 2s
-
-Type "converge plan server"
-Sleep 500ms
-Enter
-Sleep 8s
