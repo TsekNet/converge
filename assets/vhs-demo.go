@@ -37,46 +37,82 @@ func main() {
 	}
 
 	p := output.NewTerminalPrinter()
-	p.SetMaxNameLen(24)
+	p.SetMaxNameLen(28)
 
 	// Banner + header
-	p.Banner("0.0.1")
+	p.Banner("0.0.5")
 	p.BlueprintHeader(blueprint)
 
-	// Plan results: mix of in-sync and pending changes
-	resources := []struct {
+	type resource struct {
 		ext   extensions.Extension
 		state *extensions.State
-	}{
-		{&stubExt{"file:/etc/motd", "File /etc/motd"}, &extensions.State{
-			InSync: false,
-			Changes: []extensions.Change{
-				{Property: "content", From: "(absent)", To: "Managed by Converge", Action: "add"},
-				{Property: "mode", To: "0644", Action: "add"},
-			},
-		}},
-		{&stubExt{"package:git", "Package git"}, &extensions.State{InSync: true}},
-		{&stubExt{"package:curl", "Package curl"}, &extensions.State{InSync: true}},
-		{&stubExt{"package:neovim", "Package neovim"}, &extensions.State{
-			InSync: false,
-			Changes: []extensions.Change{
-				{Property: "state", From: "absent", To: "present", Action: "add"},
-			},
-		}},
-		{&stubExt{"service:sshd", "Service sshd"}, &extensions.State{
-			InSync: false,
-			Changes: []extensions.Change{
-				{Property: "enable", To: "true", Action: "add"},
-				{Property: "state", From: "stopped", To: "running", Action: "modify"},
-			},
-		}},
-		{&stubExt{"user:devuser", "User devuser"}, &extensions.State{
-			InSync: false,
-			Changes: []extensions.Change{
-				{Property: "groups", To: "[sudo]", Action: "add"},
-				{Property: "shell", To: "/bin/bash", Action: "add"},
-			},
-		}},
+	}
+
+	var resources []resource
+	switch blueprint {
+	case "server":
+		resources = []resource{
+			{&stubExt{"file:/etc/motd", "File /etc/motd"}, &extensions.State{
+				InSync: false,
+				Changes: []extensions.Change{
+					{Property: "content", From: "(absent)", To: "Managed by Converge", Action: "add"},
+				},
+			}},
+			{&stubExt{"package:nginx", "Package nginx"}, &extensions.State{InSync: true}},
+			{&stubExt{"service:nginx", "Service nginx"}, &extensions.State{
+				InSync: false,
+				Changes: []extensions.Change{
+					{Property: "state", From: "stopped", To: "running", Action: "modify"},
+					{Property: "enable", To: "true", Action: "add"},
+				},
+			}},
+			{&stubExt{"firewall:Allow HTTP", "Firewall Allow HTTP"}, &extensions.State{
+				InSync: false,
+				Changes: []extensions.Change{
+					{Property: "rule", From: "absent", To: "present", Action: "add"},
+				},
+			}},
+			{&stubExt{"firewall:Allow HTTPS", "Firewall Allow HTTPS"}, &extensions.State{InSync: true}},
+			{&stubExt{"firewall:Block SMTP out", "Firewall Block SMTP out"}, &extensions.State{
+				InSync: false,
+				Changes: []extensions.Change{
+					{Property: "rule", From: "absent", To: "present", Action: "add"},
+				},
+			}},
+		}
+	default:
+		resources = []resource{
+			{&stubExt{"file:/etc/motd", "File /etc/motd"}, &extensions.State{
+				InSync: false,
+				Changes: []extensions.Change{
+					{Property: "content", From: "(absent)", To: "Managed by Converge", Action: "add"},
+					{Property: "mode", To: "0644", Action: "add"},
+				},
+			}},
+			{&stubExt{"package:git", "Package git"}, &extensions.State{InSync: true}},
+			{&stubExt{"package:curl", "Package curl"}, &extensions.State{InSync: true}},
+			{&stubExt{"package:neovim", "Package neovim"}, &extensions.State{
+				InSync: false,
+				Changes: []extensions.Change{
+					{Property: "state", From: "absent", To: "present", Action: "add"},
+				},
+			}},
+			{&stubExt{"firewall:Allow SSH", "Firewall Allow SSH"}, &extensions.State{InSync: true}},
+			{&stubExt{"service:sshd", "Service sshd"}, &extensions.State{
+				InSync: false,
+				Changes: []extensions.Change{
+					{Property: "enable", To: "true", Action: "add"},
+					{Property: "state", From: "stopped", To: "running", Action: "modify"},
+				},
+			}},
+			{&stubExt{"user:devuser", "User devuser"}, &extensions.State{
+				InSync: false,
+				Changes: []extensions.Change{
+					{Property: "groups", To: "[sudo]", Action: "add"},
+					{Property: "shell", To: "/bin/bash", Action: "add"},
+				},
+			}},
+		}
 	}
 
 	for i, r := range resources {
