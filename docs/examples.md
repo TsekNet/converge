@@ -797,8 +797,8 @@ The shard is computed from the first 7 characters of the hardware serial number 
 | Platform | Serial Source |
 |----------|--------------|
 | Linux | `/sys/class/dmi/id/product_serial` |
-| macOS | `kern.uuid` via sysctl (hardware UUID) |
-| Windows | SMBIOS Type 1 via `GetSystemFirmwareTable` |
+| macOS | `kern.uuid` via `/usr/sbin/sysctl` (hardware UUID) |
+| Windows | `HKLM\HARDWARE\DESCRIPTION\System\BIOS\SerialNumber` registry |
 
 ### Secret / Encrypted Config
 

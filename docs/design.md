@@ -235,8 +235,8 @@ Converge avoids shelling out to executables wherever a native API exists. This e
 | Firewall | Linux | `github.com/google/nftables` netlink (IPv4 only) | `iptables` / `nft` commands |
 | Firewall | Windows | `HKLM\...\FirewallRules` registry + SCM notify | `netsh advfirewall` |
 | Shard (serial) | Linux | `/sys/class/dmi/id/product_serial` file I/O | `dmidecode` command |
-| Shard (serial) | Windows | `GetSystemFirmwareTable` (SMBIOS) | `wmic bios` command |
-| Shard (serial) | macOS | `kern.uuid` via sysctl (hardware UUID) | `ioreg` command |
+| Shard (serial) | Windows | `HKLM\HARDWARE\...\BIOS\SerialNumber` registry | `wmic bios` command |
+| Shard (serial) | macOS | `/usr/sbin/sysctl -n kern.uuid` (hardware UUID) | `ioreg` command |
 
 ---
 
