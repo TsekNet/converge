@@ -99,3 +99,14 @@ type PlistOpts struct {
 	Host     bool   // true = /Library/Preferences (system-wide), false = ~/Library/Preferences
 	Critical bool
 }
+
+type FirewallOpts struct {
+	Port      int
+	Protocol  string // "tcp" or "udp"
+	Direction string // "inbound" or "outbound"
+	Action    string // "allow" or "block"
+	Source    string // Optional source address/CIDR
+	Dest      string // Optional destination address/CIDR
+	State     ResourceState
+	Critical  bool
+}

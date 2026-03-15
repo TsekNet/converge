@@ -22,4 +22,17 @@ func Windows(r *dsl.Run) {
 		Type:  "dword",
 		Data:  0,
 	})
+
+	// Allow RDP inbound, block outbound SMTP.
+	r.Firewall("Allow RDP", dsl.FirewallOpts{Port: 3389, Action: "allow"})
+	r.Firewall("Block SMTP out", dsl.FirewallOpts{
+		Port:      25,
+		Direction: "outbound",
+		Action:    "block",
+	})
+
+	// Canary: 5% of fleet gets the new security agent.
+	if r.InShard(5) {
+		r.Package("converge-defender", dsl.PackageOpts{State: dsl.Present})
+	}
 }

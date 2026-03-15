@@ -81,6 +81,7 @@ func TestRun_ResourceIDs(t *testing.T) {
 	run.Service("sshd", ServiceOpts{State: Running})
 	run.Exec("test", ExecOpts{Command: "echo hello"})
 	run.User("dev", UserOpts{Shell: "/bin/bash"})
+	run.Firewall("Allow SSH", FirewallOpts{Port: 22, Protocol: "tcp", Direction: "inbound", Action: "allow"})
 	tests := []struct {
 		index   int
 		wantID  string
@@ -91,6 +92,7 @@ func TestRun_ResourceIDs(t *testing.T) {
 		{2, "service:sshd", "Service sshd"},
 		{3, "exec:test", "Exec test"},
 		{4, "user:dev", "User dev"},
+		{5, "firewall:Allow SSH", "Firewall Allow SSH (tcp/22 allow)"},
 	}
 
 	resources := run.Resources()
@@ -157,4 +159,35 @@ func TestRun_Include_PanicsOnMissing(t *testing.T) {
 	app := New()
 	run := newRun(app)
 	run.Include("nonexistent")
+}
+
+func TestRun_FirewallDefaults(t *testing.T) {
+	run := newRun(New())
+	run.Firewall("DefaultsTest", FirewallOpts{Port: 443})
+
+	r := run.Resources()[0]
+	if got := r.String(); got != "Firewall DefaultsTest (tcp/443 allow)" {
+		t.Errorf("String() = %q, want defaults applied (tcp/443 allow)", got)
+	}
+}
+
+func TestRun_FirewallAbsent(t *testing.T) {
+	run := newRun(New())
+	run.Firewall("Remove SSH", FirewallOpts{Port: 22, State: Absent})
+
+	r := run.Resources()[0]
+	if r.ID() != "firewall:Remove SSH" {
+		t.Errorf("ID() = %q", r.ID())
+	}
+}
+
+func TestRun_FirewallPanicsOnEmptyName(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Firewall() should panic on empty name")
+		}
+	}()
+
+	run := newRun(New())
+	run.Firewall("", FirewallOpts{Port: 22})
 }

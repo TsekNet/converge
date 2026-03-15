@@ -1,6 +1,8 @@
-# Guide
+# Examples
 
-How to write, register, compose, and test Converge blueprints, plus a complete reference for every built-in resource type.
+How to write, register, compose, and test Converge blueprints, plus a complete reference for every built-in resource type with per-platform examples.
+
+For real-world blueprints, see the [blueprints/](../blueprints/) directory, including [CIS L1 benchmarks](../blueprints/cis/) for Windows, Ubuntu, and macOS.
 
 ---
 
@@ -37,6 +39,53 @@ func Blueprint(r *dsl.Run) {
 ```
 
 This declares three things: a file with specific content and permissions, an installed package, and a running enabled service.
+
+Here's a more complete example showing cross-platform logic:
+
+```go
+package blueprints
+
+import "github.com/TsekNet/converge/dsl"
+
+func Workstation(r *dsl.Run) {
+    p := r.Platform()
+
+    // Cross-platform: install git everywhere
+    r.Package("git", dsl.PackageOpts{State: dsl.Present})
+
+    // Cross-platform: allow SSH inbound
+    r.Firewall("Allow SSH", dsl.FirewallOpts{Port: 22, Action: "allow"})
+
+    // Cross-platform: use encrypted secrets
+    enrollSecret := r.Secret("fleet.enroll_secret")
+
+    // Platform-specific config files
+    switch p.OS {
+    case "linux":
+        r.File("/etc/default/orbit", dsl.FileOpts{
+            Content: "ORBIT_ENROLL_SECRET=" + enrollSecret + "\n",
+            Mode:    0600,
+        })
+        r.Service("orbit", dsl.ServiceOpts{State: dsl.Running, Enable: true})
+
+    case "darwin":
+        r.File("/etc/orbit/secret", dsl.FileOpts{
+            Content: enrollSecret,
+            Mode:    0600,
+        })
+
+    case "windows":
+        r.File(`C:\Program Files\Orbit\secret`, dsl.FileOpts{
+            Content: enrollSecret,
+        })
+    }
+
+    // Canary rollout: 10% of fleet gets the new agent
+    if r.InShard(10) {
+        r.Package("new-monitoring-agent", dsl.PackageOpts{State: dsl.Present})
+    }
+}
+```
 
 ---
 
@@ -183,6 +232,35 @@ r.File(path string, opts dsl.FileOpts)
 
 **Idempotency:** Compares content byte-for-byte and stat metadata. No write if current state matches.
 
+**Examples:**
+
+```go
+// Linux: system banner
+r.File("/etc/motd", dsl.FileOpts{
+    Content: "Managed by Converge\n",
+    Mode:    0644,
+})
+
+// macOS: LaunchDaemon plist
+r.File("/Library/LaunchDaemons/com.example.agent.plist", dsl.FileOpts{
+    Content: agentPlist,
+    Mode:    0644,
+    Owner:   "root",
+    Group:   "wheel",
+})
+
+// Windows: config file (Mode/Owner/Group ignored)
+r.File(`C:\ProgramData\MyApp\config.json`, dsl.FileOpts{
+    Content: `{"managed": true}`,
+})
+
+// Append to an existing file (all platforms)
+r.File("/etc/hosts", dsl.FileOpts{
+    Content: "10.0.0.5 internal.example.com\n",
+    Append:  true,
+})
+```
+
 ### Package
 
 Install or remove packages via the detected system package manager.
@@ -207,6 +285,25 @@ r.Package(name string, opts dsl.PackageOpts)
 
 **Idempotency:** Queries the package manager before acting. Installing an already-installed package or removing a missing one is a no-op.
 
+**Examples:**
+
+```go
+// Linux (Ubuntu/Debian): install via apt
+r.Package("curl", dsl.PackageOpts{State: dsl.Present})
+
+// Linux (Fedora): install via dnf (auto-detected)
+r.Package("httpd", dsl.PackageOpts{State: dsl.Present})
+
+// macOS: install via brew
+r.Package("jq", dsl.PackageOpts{State: dsl.Present})
+
+// Windows: install via choco
+r.Package("7zip", dsl.PackageOpts{State: dsl.Present})
+
+// Remove a package (all platforms)
+r.Package("telnet", dsl.PackageOpts{State: dsl.Absent})
+```
+
 ### Service
 
 Manage service runtime state, boot-time enablement, and startup type.
@@ -229,6 +326,35 @@ r.Service(name string, opts dsl.ServiceOpts)
 
 **Idempotency:** Checks current state before acting. Starting a running service is a no-op.
 
+**Examples:**
+
+```go
+// Linux: enable and start sshd via systemd
+r.Service("sshd", dsl.ServiceOpts{
+    State:  dsl.Running,
+    Enable: true,
+})
+
+// Linux: stop and disable a service
+r.Service("cups", dsl.ServiceOpts{
+    State:  dsl.Stopped,
+    Enable: false,
+})
+
+// Windows: set a service to delayed auto-start
+r.Service("wuauserv", dsl.ServiceOpts{
+    State:       dsl.Running,
+    Enable:      true,
+    StartupType: "delayed-auto",
+})
+
+// Windows: disable Windows Update service
+r.Service("wuauserv", dsl.ServiceOpts{
+    State:       dsl.Stopped,
+    StartupType: "disabled",
+})
+```
+
 ### Exec
 
 Run arbitrary commands. Use sparingly -- prefer declarative resources when they exist.
@@ -246,6 +372,38 @@ r.Exec(name string, opts dsl.ExecOpts)
 | `RetryDelay` | `time.Duration` | `0` | Delay between retries. |
 
 **Idempotency:** Not inherently idempotent. Always provide an `OnlyIf` command to make it conditional.
+
+**Examples:**
+
+```go
+// Linux: run a script only if a marker file is missing
+r.Exec("bootstrap", dsl.ExecOpts{
+    Command: "/usr/local/bin/bootstrap.sh",
+    OnlyIf:  "test -f /var/lib/myapp/.bootstrapped",
+})
+
+// macOS: flush DNS cache
+r.Exec("flush-dns", dsl.ExecOpts{
+    Command: "/usr/bin/dscacheutil",
+    Args:    []string{"-flushcache"},
+})
+
+// Windows: enable TLS 1.2 (OnlyIf checks if already set)
+r.Exec("enable-tls12", dsl.ExecOpts{
+    Command: "powershell.exe",
+    Args:    []string{"-NoProfile", "-Command", "New-ItemProperty -Path 'HKLM:\\SYSTEM\\...' -Name Enabled -Value 1"},
+    OnlyIf:  "powershell.exe -NoProfile -Command \"(Get-ItemProperty 'HKLM:\\SYSTEM\\...').Enabled -eq 1\"",
+})
+
+// Retry on transient failure (all platforms)
+r.Exec("download-agent", dsl.ExecOpts{
+    Command:    "curl",
+    Args:       []string{"-fsSL", "-o", "/tmp/agent.tar.gz", "https://example.com/agent.tar.gz"},
+    OnlyIf:     "test -f /tmp/agent.tar.gz",
+    Retries:    3,
+    RetryDelay: 5 * time.Second,
+})
+```
 
 ### User
 
@@ -270,6 +428,33 @@ r.User(name string, opts dsl.UserOpts)
 
 **Idempotency:** Creates user if missing. Modifies only divergent attributes if user exists.
 
+**Examples:**
+
+```go
+// Linux: create app user with specific shell and groups
+r.User("deploy", dsl.UserOpts{
+    Shell:  "/bin/bash",
+    Home:   "/home/deploy",
+    Groups: []string{"docker", "sudo"},
+})
+
+// Linux: system account (low UID, no home)
+r.User("prometheus", dsl.UserOpts{
+    System: true,
+    Shell:  "/usr/sbin/nologin",
+})
+
+// macOS: add user to admin group
+r.User("admin", dsl.UserOpts{
+    Groups: []string{"admin", "staff"},
+})
+
+// Windows: add user to local Administrators (Shell/System ignored)
+r.User("svc-agent", dsl.UserOpts{
+    Groups: []string{"Administrators"},
+})
+```
+
 ### Registry (Windows only)
 
 Manage Windows registry keys and values via native Win32 API. Available only in `//go:build windows` blueprints.
@@ -292,6 +477,32 @@ The `key` is the full registry path, e.g., `HKLM\SOFTWARE\MyApp`.
 **API:** `golang.org/x/sys/windows/registry` -- no `reg.exe`.
 
 **Idempotency:** Reads current value via type-appropriate getter and compares. Creates intermediate keys if needed without disturbing existing sibling values.
+
+**Examples:**
+
+```go
+//go:build windows
+
+// Set a string value
+r.Registry(`HKLM\SOFTWARE\MyOrg`, dsl.RegistryOpts{
+    Value: "Environment",
+    Type:  "sz",
+    Data:  "production",
+})
+
+// Set a DWORD (integer) value
+r.Registry(`HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU`, dsl.RegistryOpts{
+    Value: "NoAutoUpdate",
+    Type:  "dword",
+    Data:  uint32(1),
+})
+
+// Delete a registry value
+r.Registry(`HKLM\SOFTWARE\MyOrg`, dsl.RegistryOpts{
+    Value: "DeprecatedSetting",
+    State: dsl.Absent,
+})
+```
 
 ### SecurityPolicy (Windows only)
 
@@ -327,6 +538,31 @@ r.SecurityPolicy(name string, opts dsl.SecurityPolicyOpts)
 
 **API:** `netapi32.dll` `NetUserModalsGet/Set` -- no `secedit.exe`.
 
+**Examples:**
+
+```go
+//go:build windows
+
+// Require 12-character minimum passwords
+r.SecurityPolicy("min-password-length", dsl.SecurityPolicyOpts{
+    Category: "password",
+    Key:      "MinimumPasswordLength",
+    Value:    "12",
+})
+
+// Lock accounts after 5 failed attempts for 30 minutes
+r.SecurityPolicy("lockout-threshold", dsl.SecurityPolicyOpts{
+    Category: "lockout",
+    Key:      "LockoutThreshold",
+    Value:    "5",
+})
+r.SecurityPolicy("lockout-duration", dsl.SecurityPolicyOpts{
+    Category: "lockout",
+    Key:      "LockoutDuration",
+    Value:    "1800",
+})
+```
+
 ### AuditPolicy (Windows only)
 
 Manage Windows advanced audit policy via native Win32 APIs. Available only in `//go:build windows` blueprints.
@@ -357,6 +593,25 @@ r.AuditPolicy(name string, opts dsl.AuditPolicyOpts)
 
 **API:** `advapi32.dll` `AuditQuerySystemPolicy/AuditSetSystemPolicy` -- no `auditpol.exe`.
 
+**Examples:**
+
+```go
+//go:build windows
+
+// Audit successful and failed logon attempts
+r.AuditPolicy("audit-logon", dsl.AuditPolicyOpts{
+    Subcategory: "Logon",
+    Success:     true,
+    Failure:     true,
+})
+
+// Audit process creation (for security monitoring)
+r.AuditPolicy("audit-process-creation", dsl.AuditPolicyOpts{
+    Subcategory: "Process Creation",
+    Success:     true,
+})
+```
+
 ### Sysctl (Linux only)
 
 Manage Linux kernel parameters via `/proc/sys/`. Available only in `//go:build linux` blueprints.
@@ -375,6 +630,28 @@ The `key` uses dotted notation, e.g., `net.ipv4.ip_forward`.
 **API:** Direct file I/O to `/proc/sys/` -- no `sysctl` command.
 
 **Idempotency:** Reads the live kernel value from `/proc/sys/<key>` and compares. Writes only on mismatch.
+
+**Examples:**
+
+```go
+//go:build linux
+
+// Enable IP forwarding
+r.Sysctl("net.ipv4.ip_forward", dsl.SysctlOpts{
+    Value: "1",
+})
+
+// Harden TCP SYN cookies
+r.Sysctl("net.ipv4.tcp_syncookies", dsl.SysctlOpts{
+    Value: "1",
+})
+
+// Set without persisting to disk (takes effect until reboot only)
+r.Sysctl("vm.swappiness", dsl.SysctlOpts{
+    Value:   "10",
+    Persist: false,
+})
+```
 
 ### Plist (macOS only)
 
@@ -396,3 +673,157 @@ The `domain` is the preference domain, e.g., `com.apple.screensaver`.
 **API:** `howett.net/plist` for binary plist encode/decode -- no `defaults` command.
 
 **Idempotency:** Reads the plist file, decodes, and compares the key's current value. Writes only on mismatch using read-modify-write to preserve other keys.
+
+**Examples:**
+
+```go
+//go:build darwin
+
+// Disable screensaver password grace period (system-wide)
+r.Plist("com.apple.screensaver", dsl.PlistOpts{
+    Key:   "askForPasswordDelay",
+    Value: 0,
+    Type:  "int",
+    Host:  true,
+})
+
+// Set Finder preferences (user-level)
+r.Plist("com.apple.finder", dsl.PlistOpts{
+    Key:   "AppleShowAllExtensions",
+    Value: true,
+    Type:  "bool",
+})
+
+// Disable Gatekeeper assessments
+r.Plist("com.apple.LaunchServices", dsl.PlistOpts{
+    Key:   "LSQuarantine",
+    Value: false,
+    Type:  "bool",
+    Host:  true,
+})
+```
+
+### Firewall
+
+Manage host firewall rules. Cross-platform: available in all blueprints.
+
+```go
+r.Firewall(name string, opts dsl.FirewallOpts)
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `Port` | `int` | (required) | Port number (1-65535). |
+| `Protocol` | `string` | `"tcp"` | `"tcp"` or `"udp"`. |
+| `Direction` | `string` | `"inbound"` | `"inbound"` or `"outbound"`. |
+| `Action` | `string` | `"allow"` | `"allow"` or `"block"`. |
+| `Source` | `string` | `""` | Source IP or CIDR. Empty = any. |
+| `Dest` | `string` | `""` | Destination IP or CIDR. Empty = any. |
+| `State` | `dsl.ResourceState` | `dsl.Present` | `Present` to create, `Absent` to delete. |
+
+| Platform | Backend | API |
+|----------|---------|-----|
+| Linux | nftables (IPv4 only) | `github.com/google/nftables` (netlink) |
+| macOS | pf (anchor-based) | `/etc/pf.anchors/converge` + `pfctl` reload |
+| Windows | Windows Firewall (registry) | `HKLM\...\FirewallRules` + SCM notify |
+
+**Input validation:** All fields are validated at construction time. Invalid names, out-of-range ports, and malformed source/dest addresses are rejected with a panic.
+
+**Idempotency:** Checks if a matching rule exists before creating. On Linux, rules are identified by nftables UserData tag. On macOS, by a pf comment tag. On Windows, by the registry value name and content.
+
+**Examples:**
+
+```go
+// Allow SSH inbound (all platforms)
+r.Firewall("Allow SSH", dsl.FirewallOpts{
+    Port:     22,
+    Protocol: "tcp",
+    Action:   "allow",
+})
+
+// Block outbound to a specific port
+r.Firewall("Block SMTP out", dsl.FirewallOpts{
+    Port:      25,
+    Direction: "outbound",
+    Action:    "block",
+})
+
+// Allow inbound from a specific subnet only
+r.Firewall("Allow monitoring", dsl.FirewallOpts{
+    Port:   9090,
+    Source: "10.0.0.0/8",
+    Action: "allow",
+})
+
+// Remove a rule that was previously managed
+r.Firewall("Legacy RDP", dsl.FirewallOpts{
+    Port:  3389,
+    State: dsl.Absent,
+})
+```
+
+### InShard
+
+Percentage-based rollout sharding. Not a resource (no Check/Apply), but a DSL helper for conditional logic in blueprints.
+
+```go
+// Roll out a new package to 10% of the fleet
+if r.InShard(10) {
+    r.Package("new-agent", dsl.PackageOpts{State: dsl.Present})
+}
+
+// Canary a config change: 5% first, then expand to 50%, then 100%
+if r.InShard(5) {
+    r.File("/etc/myapp/experimental.conf", dsl.FileOpts{
+        Content: "feature_v2=true\n",
+    })
+}
+
+// Use InShardWithSerial in tests to verify shard logic
+// (the serial is normalized the same way as InShard)
+if r.InShardWithSerial(10, "TEST-SERIAL") {
+    // This runs deterministically in tests
+}
+```
+
+The shard is computed from the first 7 characters of the hardware serial number via SHA-256. The same machine always lands in the same bucket across runs. Known placeholder serials (`Not Specified`, `To Be Filled By O.E.M.`, etc.) are rejected, causing `InShard` to return `false`.
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `InShard` | `(percent int) bool` | Uses auto-detected hardware serial. |
+| `InShardWithSerial` | `(percent int, serial string) bool` | Uses an explicit serial (for testing). The serial is normalized identically to `InShard` (trimmed, placeholder-checked, truncated to 7 chars). |
+| `ShardBucket` | `(serial string) uint64` | Returns the shard bucket [0, 100) for a given serial. Package-level function, useful for testing. |
+
+| Platform | Serial Source |
+|----------|--------------|
+| Linux | `/sys/class/dmi/id/product_serial` |
+| macOS | `kern.uuid` via sysctl (hardware UUID) |
+| Windows | SMBIOS Type 1 via `GetSystemFirmwareTable` |
+
+### Secret / Encrypted Config
+
+Retrieve config values from Go maps registered at compile time. Values wrapped in `ENC[AES256:...]` are decrypted transparently with AES-256-GCM.
+
+```go
+// In a config file (e.g., config.go):
+func init() {
+    dsl.RegisterConfig(map[string]any{
+        "fleet": map[string]any{
+            "server_url":    "https://fleet.example.com",
+            "enroll_secret": "ENC[AES256:base64ciphertext...]",
+        },
+    })
+}
+
+// In a blueprint:
+func Blueprint(r *dsl.Run) {
+    secret := r.Secret("fleet.enroll_secret") // decrypted automatically
+    url := r.Secret("fleet.server_url")       // plain value returned as-is
+}
+```
+
+**Key management:** Call `dsl.SetConfigKey("your-key")` once at startup, typically sourced from an environment variable. The key is SHA-256 hashed to 32 bytes, so use a high-entropy random key (not a passphrase). Generate encrypted values with `val, err := dsl.Encrypt("plaintext")`.
+
+**Fail-closed:** If the key is missing or decryption fails, `Secret` returns an empty string (never leaks ciphertext).
+
+**No external deps:** Uses Go stdlib `crypto/aes` + `crypto/cipher` (AES-256-GCM with random nonces).

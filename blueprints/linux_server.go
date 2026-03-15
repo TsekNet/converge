@@ -23,12 +23,18 @@ func LinuxServer(r *dsl.Run) {
 		Critical: true,
 	})
 
-	for _, pkg := range []string{"fail2ban", "ufw"} {
-		r.Package(pkg, dsl.PackageOpts{State: dsl.Present})
-	}
+	r.Package("fail2ban", dsl.PackageOpts{State: dsl.Present})
 
 	r.Service("fail2ban", dsl.ServiceOpts{
 		State:  dsl.Running,
 		Enable: true,
+	})
+
+	// Allow only SSH and monitoring inbound.
+	r.Firewall("Allow SSH", dsl.FirewallOpts{Port: 22, Action: "allow"})
+	r.Firewall("Allow monitoring", dsl.FirewallOpts{
+		Port:   9090,
+		Source: "10.0.0.0/8",
+		Action: "allow",
 	})
 }
