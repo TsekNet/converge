@@ -50,7 +50,7 @@ func (a *App) Blueprints() []Item {
 	return out
 }
 
-// Extensions returns the built-in resource types.
+// Extensions returns built-in capabilities (resources and helpers).
 func (a *App) Extensions() []Item {
 	return []Item{
 		{"File", "Manage file content, permissions, and ownership"},
@@ -58,7 +58,14 @@ func (a *App) Extensions() []Item {
 		{"Service", "Manage system services"},
 		{"Exec", "Run commands with guards and retries"},
 		{"User", "Manage local user accounts"},
-		{"Registry", "Manage Windows registry keys"},
+		{"Firewall", "Manage host firewall rules (nftables, pf, Windows Firewall)"},
+		{"Registry", "Manage Windows registry keys (Windows only)"},
+		{"SecurityPolicy", "Manage Windows password and lockout policies (Windows only)"},
+		{"AuditPolicy", "Manage Windows advanced audit policy (Windows only)"},
+		{"Sysctl", "Manage Linux kernel parameters via /proc/sys (Linux only)"},
+		{"Plist", "Manage macOS preference domains (macOS only)"},
+		{"InShard", "Percentage-based rollout sharding by hardware serial (helper)"},
+		{"Secret", "Retrieve and decrypt config values with AES-256-GCM (helper)"},
 	}
 }
 

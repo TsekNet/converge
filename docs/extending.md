@@ -121,6 +121,7 @@ Some extensions have sub-interfaces for platform-specific implementations:
 |-----------|--------------|-----------------|
 | `pkg/` | `PackageManager` | apt, brew, choco, dnf, yum, zypper, apk, pacman, winget |
 | `service/` | Platform build tags | systemd (Linux), launchd (macOS), SCM (Windows) |
+| `firewall/` | Platform build tags | nftables/netlink (Linux), pf/anchor (macOS), registry API (Windows) |
 
 To add a new package manager or init system, implement the sub-interface and register it. The engine doesn't change.
 
@@ -128,37 +129,17 @@ To add a new package manager or init system, implement the sub-interface and reg
 
 ## Directory Structure
 
-```
-extensions/
-├── extension.go          # Extension interface (don't modify)
-├── state.go              # State/Change/Result types (don't modify)
-├── file/                 # File management
-├── exec/                 # Command execution with guards and retries
-├── pkg/                  # Package management (add new managers here)
-├── service/              # Service management (platform build tags)
-├── user/                 # User/group management
-├── registry/             # Windows registry (native Win32 API)
-├── secpol/               # Windows security policy (NetUserModalsGet/Set)
-├── auditpol/             # Windows audit policy (AuditQuerySystemPolicy/AuditSetSystemPolicy)
-├── sysctl/               # Linux kernel parameters (direct /proc/sys/ I/O)
-└── plist/                # macOS preference domains (howett.net/plist)
-```
+Each extension lives in its own subdirectory under `extensions/`. The shared `extension.go` and `state.go` define the interfaces and types: don't modify these. Current extensions: file, exec, firewall, pkg, service, user, registry, secpol, auditpol, sysctl, plist.
 
 ---
 
 ## Platform-Specific Extensions (Build Tags)
 
-Use Go build tags to split platform-specific code. There are no stubs -- if a platform doesn't need an extension, the DSL simply doesn't expose it.
+Use Go build tags to split platform-specific code. There are no stubs: if a platform doesn't need an extension, the DSL simply doesn't expose it.
 
 ### Extension layer: shared struct + build-tagged Check/Apply
 
-```
-extensions/service/
-├── service.go            # Shared: struct, New(), ID(), String(), IsCritical()
-├── service_linux.go      # //go:build linux  -- Check/Apply via systemctl
-├── service_darwin.go     # //go:build darwin -- Check/Apply via launchd
-└── service_windows.go    # //go:build windows -- Check/Apply via SCM
-```
+Each extension has a shared file (no build tag) with the struct, `New()`, `ID()`, `String()`, `IsCritical()`. Platform-specific `Check()` and `Apply()` go in build-tagged files (e.g., `service_linux.go`, `service_windows.go`).
 
 **Rules:**
 1. The struct definition and `New()` constructor stay in the shared file (no build tag)
@@ -168,19 +149,7 @@ extensions/service/
 
 ### DSL layer: build-tagged methods and factories
 
-If your extension is platform-specific (like Registry or Sysctl), you also need to wire it into the DSL:
-
-```
-dsl/
-├── run.go                # Cross-platform methods: File(), Package(), Service(), Exec(), User()
-├── run_windows.go        # Registry(), SecurityPolicy(), AuditPolicy()
-├── run_linux.go          # Sysctl()
-├── run_darwin.go         # Plist()
-├── resources.go          # Factories for cross-platform extensions
-├── resources_windows.go  # Factories for Windows extensions
-├── resources_linux.go    # Factories for Linux extensions
-└── resources_darwin.go   # Factories for macOS extensions
-```
+If your extension is platform-specific (like Registry or Sysctl), you also need to wire it into the DSL. Cross-platform methods go in `dsl/run.go`, platform-specific methods in `dsl/run_<platform>.go`, and factories in `dsl/resources.go` or `dsl/resources_<platform>.go`.
 
 **To add a platform-specific DSL method:**
 

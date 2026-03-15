@@ -67,6 +67,9 @@ converge plan my-server --detailed-exit-codes  # granular exit codes for CI
 | **CIS benchmarks** | Built-in CIS L1 blueprints for [Windows](blueprints/cis/cis_windows.go), [Ubuntu](blueprints/cis/cis_linux.go), and [macOS](blueprints/cis/cis_darwin.go) |
 | **Plan / Apply** | Dry-run any blueprint before making changes |
 | **Parallel execution** | Concurrent resource application with configurable parallelism |
+| **Firewall management** | Declarative firewall rules across Linux (nftables), macOS (pf), Windows (registry API) |
+| **Rollout sharding** | Percentage-based canary rollouts with `r.InShard()` keyed on hardware serial |
+| **Encrypted config** | AES-256-GCM encrypted values in Go config maps, decrypted transparently by `r.Secret()` |
 | **Extensible** | Implement the `Extension` interface to add new resource types |
 
 ## Why converge?
@@ -86,7 +89,7 @@ converge plan my-server --detailed-exit-codes  # granular exit codes for CI
 | Doc | Description |
 |-----|-------------|
 | [Design](docs/design.md) | Philosophy, architecture, engine flow, native API strategy |
-| [Guide](docs/guide.md) | Blueprint writing, composition, testing, full resource reference |
+| [Examples](docs/examples.md) | Blueprint writing, composition, testing, full resource reference with per-platform examples |
 | [CLI](docs/cli.md) | Commands, flags, exit codes, output formats |
 | [Extensions](docs/extending.md) | Adding new extensions and platform-specific resources |
 | [Blueprints](blueprints/) | Built-in blueprints including [CIS benchmarks](blueprints/cis/) |

@@ -74,7 +74,7 @@ One error handling pattern (the `Critical` flag). One way to include shared logi
 | `apply` | root / SYSTEM | None | Applies changes where `Check()` reports drift |
 
 - **No network by default.** Zero network calls during execution. All configuration is compiled in or read from local disk.
-- **No secrets in code.** Secrets come from environment variables via `EnvRequired()`, which fails the run if the variable is unset.
+- **No secrets in code.** Secrets come from AES-256-GCM encrypted config values via `r.Secret()`. Encrypted values use the `ENC[AES256:...]` format and are decrypted at runtime with a high-entropy key provided via `SetConfigKey()`, typically sourced from an environment variable. Decryption is fail-closed: missing keys or corrupted ciphertext return empty strings, never raw ciphertext.
 
 ---
 
@@ -106,67 +106,13 @@ type Resource interface {
 
 ### Package Layout
 
-```
-converge/
-├── dsl/                     # Public SDK (import "github.com/TsekNet/converge/dsl")
-│   ├── dsl.go               # Blueprint type, state enums, all Opts structs
-│   ├── app.go               # App: New(), Register(), Execute(), RunPlan(), RunApply()
-│   ├── run.go               # Run: cross-platform methods (File, Package, Service, Exec, User, Include)
-│   ├── run_windows.go       # Registry(), SecurityPolicy(), AuditPolicy()
-│   ├── run_linux.go         # Sysctl()
-│   ├── run_darwin.go        # Plist()
-│   ├── resources.go         # Factory functions for cross-platform extensions
-│   ├── resources_windows.go # Factory functions for Windows extensions
-│   ├── resources_linux.go   # Factory functions for Linux extensions
-│   └── resources_darwin.go  # Factory functions for macOS extensions
-│
-├── extensions/              # Public, community-extensible
-│   ├── extension.go         # Extension interface: ID(), Check(), Apply(), String()
-│   ├── state.go             # State, Change, Result types
-│   ├── file/                # File content, permissions, ownership
-│   ├── exec/                # Arbitrary command execution with guards and retries
-│   ├── pkg/                 # Package management (apt, brew, choco, dnf, yum, zypper, apk, pacman, winget)
-│   ├── service/             # Service management (systemd, launchd, Windows SCM)
-│   ├── user/                # Local user accounts (useradd, dscl, net user)
-│   ├── registry/            # Windows registry via golang.org/x/sys/windows/registry
-│   ├── secpol/              # Windows security policy via NetUserModalsGet/Set
-│   ├── auditpol/            # Windows audit policy via AuditQuerySystemPolicy/AuditSetSystemPolicy
-│   ├── sysctl/              # Linux kernel parameters via /proc/sys/
-│   └── plist/               # macOS preference domains via howett.net/plist
-│
-├── internal/
-│   ├── engine/              # Plan/apply orchestration, duplicate detection
-│   ├── platform/            # OS, distro, init system, package manager detection
-│   ├── output/              # CLI formatters (terminal, serial, json)
-│   ├── logging/             # google/deck: syslog (Linux), eventlog (Windows), stderr
-│   └── version/             # Version vars set by ldflags
-│
-├── cmd/converge/            # Cobra CLI
-│   ├── main.go              # Entry point, cross-platform blueprint registration
-│   ├── blueprints_windows.go # Registers windows, cis
-│   ├── blueprints_linux.go  # Registers cis
-│   ├── blueprints_darwin.go # Registers cis
-│   └── ...                  # root.go, plan.go, apply.go, list.go, version.go
-│
-├── blueprints/              # Cross-platform blueprints
-│   ├── workstation.go       # Base workstation setup
-│   ├── linux.go             # Linux-specific defaults
-│   ├── linux_server.go      # Hardened Linux server
-│   ├── darwin.go            # macOS-specific defaults
-│   ├── windows.go           # Windows-specific defaults (build-tagged)
-│   └── cis/                 # CIS L1 benchmark blueprints
-│       ├── cis_windows.go   # CIS Windows 11 Enterprise L1
-│       ├── cis_linux.go     # CIS Ubuntu 24.04 LTS L1 Server
-│       └── cis_darwin.go    # CIS macOS L1
-│
-├── assets/                  # Logo, demo GIF, vhs-demo.go, demo.tape
-│
-└── docs/                    # You are here
-    ├── design.md            # Philosophy, architecture, engine flow
-    ├── guide.md             # Blueprint writing, resource reference
-    ├── cli.md               # Commands, flags, exit codes
-    └── extending.md         # Adding new extensions
-```
+| Package | Description |
+|---------|-------------|
+| `dsl/` | Public SDK: blueprint types, opts structs, resource methods, shard/config helpers |
+| `extensions/` | Resource implementations: file, exec, firewall, pkg, service, user, registry, secpol, auditpol, sysctl, plist |
+| `internal/` | Engine, platform detection, output formatters, logging, version |
+| `cmd/converge/` | Cobra CLI entry point, blueprint registration |
+| `blueprints/` | Built-in blueprints: workstation, linux, darwin, windows, CIS L1 |
 
 **Boundary rules:**
 
@@ -199,31 +145,11 @@ type Extension interface {
 
 Platform-specific code uses Go build tags. There are no stubs or no-op shims -- if a platform doesn't need an extension, the DSL simply doesn't expose it.
 
-**Extension pattern** -- shared struct in a plain file, Check/Apply in build-tagged files:
+**Extension pattern:** shared struct in a plain `.go` file (no build tag), `Check()`/`Apply()` in build-tagged files (one per platform). Example: `extensions/service/service.go` + `service_linux.go` + `service_windows.go`.
 
-```
-extensions/service/
-├── service.go            # Shared: struct, New(), ID(), String(), IsCritical()
-├── service_linux.go      # //go:build linux  -- Check/Apply via systemctl
-├── service_darwin.go     # //go:build darwin -- Check/Apply (launchd stub)
-└── service_windows.go    # //go:build windows -- Check/Apply via SCM
-```
+**DSL pattern:** cross-platform methods in `dsl/run.go`, platform-specific methods in `dsl/run_<platform>.go`, factories in `dsl/resources.go` and `dsl/resources_<platform>.go`.
 
-**DSL pattern** -- platform-specific methods and factory functions in build-tagged files:
-
-```
-dsl/
-├── run.go                # Cross-platform: File(), Package(), Service(), Exec(), User()
-├── run_windows.go        # Registry(), SecurityPolicy(), AuditPolicy()
-├── run_linux.go          # Sysctl()
-├── run_darwin.go         # Plist()
-├── resources.go          # Factories for cross-platform extensions
-├── resources_windows.go  # Factories for Windows extensions
-├── resources_linux.go    # Factories for Linux extensions
-└── resources_darwin.go   # Factories for macOS extensions
-```
-
-This means a Linux blueprint can call `r.Sysctl()` but not `r.Registry()`. The compiler enforces platform correctness -- no runtime "skipped (not Windows)" messages.
+This means a Linux blueprint can call `r.Sysctl()` but not `r.Registry()`. The compiler enforces platform correctness, no runtime "skipped (not Windows)" messages.
 
 ### Engine Flow
 
@@ -306,6 +232,11 @@ Converge avoids shelling out to executables wherever a native API exists. This e
 | AuditPolicy | Windows | `advapi32.dll` `AuditQuerySystemPolicy/AuditSetSystemPolicy` | `auditpol.exe` |
 | Sysctl | Linux | Direct `/proc/sys/` file I/O | `sysctl` command |
 | Plist | macOS | `howett.net/plist` (binary plist encode/decode) | `defaults` command |
+| Firewall | Linux | `github.com/google/nftables` netlink (IPv4 only) | `iptables` / `nft` commands |
+| Firewall | Windows | `HKLM\...\FirewallRules` registry + SCM notify | `netsh advfirewall` |
+| Shard (serial) | Linux | `/sys/class/dmi/id/product_serial` file I/O | `dmidecode` command |
+| Shard (serial) | Windows | `GetSystemFirmwareTable` (SMBIOS) | `wmic bios` command |
+| Shard (serial) | macOS | `kern.uuid` via sysctl (hardware UUID) | `ioreg` command |
 
 ---
 
@@ -327,6 +258,6 @@ These are real bugs, outages, and hours lost managing endpoints with Chef at sca
 ## What Converge Is Not
 
 - **Not a provisioning tool.** Use Terraform for VMs, networks, cloud resources.
-- **Not a deployment tool.** No rolling deploys, canary releases, or blue-green.
+- **Not a deployment tool.** No rolling deploys or blue-green. Percentage-based canary rollouts are supported via `r.InShard()`.
 - **Not a monitoring tool.** Plan mode detects drift, but Converge doesn't run as a daemon. Pair with Fleet/osquery/Prometheus.
 - **Not a package repository.** It installs packages but doesn't host them.

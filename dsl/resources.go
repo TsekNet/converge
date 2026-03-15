@@ -4,6 +4,7 @@ import (
 	"github.com/TsekNet/converge/extensions"
 	extexec "github.com/TsekNet/converge/extensions/exec"
 	extfile "github.com/TsekNet/converge/extensions/file"
+	extfw "github.com/TsekNet/converge/extensions/firewall"
 	extpkg "github.com/TsekNet/converge/extensions/pkg"
 	extsvc "github.com/TsekNet/converge/extensions/service"
 	extuser "github.com/TsekNet/converge/extensions/user"
@@ -48,4 +49,15 @@ func newUserExtension(name string, opts UserOpts) extensions.Extension {
 	u.System = opts.System
 	u.Critical = opts.Critical
 	return u
+}
+
+func newFirewallExtension(name string, opts FirewallOpts) extensions.Extension {
+	f := extfw.New(name, opts.Port, opts.Protocol, opts.Direction, opts.Action)
+	f.Source = opts.Source
+	f.Dest = opts.Dest
+	f.Critical = opts.Critical
+	if opts.State == Absent {
+		f.State = "absent"
+	}
+	return f
 }

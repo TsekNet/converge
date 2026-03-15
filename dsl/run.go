@@ -79,6 +79,20 @@ func (r *Run) User(name string, opts UserOpts) {
 	r.addResource(newUserExtension(name, opts))
 }
 
+func (r *Run) Firewall(name string, opts FirewallOpts) {
+	mustNotBeEmpty("Firewall", "name", name)
+	if opts.Protocol == "" {
+		opts.Protocol = "tcp"
+	}
+	if opts.Direction == "" {
+		opts.Direction = "inbound"
+	}
+	if opts.Action == "" {
+		opts.Action = "allow"
+	}
+	r.addResource(newFirewallExtension(name, opts))
+}
+
 func mustNotBeEmpty(resource, field, value string) {
 	if value == "" {
 		panic(fmt.Sprintf("converge: %s requires %s (got empty string)", resource, field))

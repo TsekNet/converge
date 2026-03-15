@@ -12,4 +12,7 @@ func Darwin(r *dsl.Run) {
 		Content: "Managed by Converge\n",
 		Mode:    0644,
 	})
+
+	// Allow SSH inbound.
+	r.Firewall("Allow SSH", dsl.FirewallOpts{Port: 22, Action: "allow"})
 }
