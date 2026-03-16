@@ -10,6 +10,6 @@ import (
 func newSysctlExtension(key string, opts SysctlOpts) extensions.Extension {
 	s := extsysctl.New(key, opts.Value)
 	s.Persist = opts.Persist
-	s.Critical = opts.Critical
+	s.Critical = opts.Meta.Critical
 	return s
 }

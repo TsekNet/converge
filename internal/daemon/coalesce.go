@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/TsekNet/converge/extensions"
+	"github.com/google/deck"
 	"golang.org/x/time/rate"
 )
 
@@ -33,7 +34,7 @@ func (c *coalescer) submit(evt extensions.Event) {
 	select {
 	case c.in <- evt:
 	default:
-		// Drop event if queue is full (backpressure).
+		deck.Warningf("coalescer: event dropped for %s (channel full)", evt.ResourceID)
 	}
 }
 

@@ -57,6 +57,9 @@ func New(g *graph.Graph, printer output.Printer, opts Options) *Daemon {
 	if opts.RetryBaseDelay == 0 {
 		opts.RetryBaseDelay = defaultRetryBase
 	}
+	if opts.Timeout == 0 {
+		opts.Timeout = 5 * time.Minute
+	}
 
 	rm := newRetryManager(opts.MaxRetries, opts.RetryBaseDelay)
 	for _, node := range g.Nodes() {
@@ -103,25 +106,25 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if window == 0 {
 		window = defaultCoalesceWindow
 	}
-	coal := newCoalescer(window, coalescedIDs)
-	go coal.run(watchCtx)
+	coalescer := newCoalescer(window, coalescedIDs)
+	go coalescer.run(watchCtx)
 
 	// Bridge: raw events -> coalescer or direct retry channel.
-	eventMeta := &sync.Map{} // resourceID -> last extensions.Event
+	eventMeta := &sync.Map{} // resourceID -> last extensions.EventKind
 	go func() {
 		for {
 			select {
 			case <-watchCtx.Done():
 				return
 			case evt := <-rawEvents:
-				eventMeta.Store(evt.ResourceID, evt)
+				eventMeta.Store(evt.ResourceID, evt.Kind)
 				if evt.Kind == extensions.EventRetry {
 					select {
 					case retryIDs <- evt.ResourceID:
 					default:
 					}
 				} else {
-					coal.submit(evt)
+					coalescer.submit(evt)
 				}
 			}
 		}
@@ -227,7 +230,7 @@ func (d *Daemon) handleResourceEvent(ctx context.Context, id string, eventMeta *
 
 	kind := extensions.EventWatch
 	if v, ok := eventMeta.Load(id); ok {
-		kind = v.(extensions.Event).Kind
+		kind = v.(extensions.EventKind)
 	}
 
 	if !d.retries.shouldProcess(id, kind) {
@@ -275,6 +278,20 @@ func (d *Daemon) convergeResource(ctx context.Context, ext extensions.Extension,
 		d.printer.ApplyResult(ext, result)
 	}
 	d.retries.reset(id)
+
+	// Schedule a re-check for dependent resources so they converge
+	// after their dependency has been successfully applied.
+	for _, childID := range d.graph.Children(id) {
+		select {
+		case events <- extensions.Event{
+			ResourceID: childID,
+			Kind:       extensions.EventWatch,
+			Detail:     "dependency converged: " + id,
+			Time:       time.Now(),
+		}:
+		default:
+		}
+	}
 }
 
 // scheduleRetry records a failure and schedules a retry event after backoff.

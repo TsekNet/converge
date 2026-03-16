@@ -1,6 +1,7 @@
 package dsl
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/TsekNet/converge/extensions"
@@ -14,7 +15,7 @@ type Run struct {
 	graph    *graph.Graph
 	platform platform.Info
 	app      *App
-	err      error // first error encountered during blueprint execution
+	errs     []error
 }
 
 func newRun(app *App) *Run {
@@ -26,24 +27,31 @@ func newRun(app *App) *Run {
 }
 
 func (r *Run) addResource(ext extensions.Extension, deps []string) {
-	if r.err != nil {
-		return // stop processing after first error
-	}
 	if err := r.graph.AddNode(ext); err != nil {
-		r.err = fmt.Errorf("%s: %v", ext.ID(), err)
+		r.errs = append(r.errs, fmt.Errorf("%s: %v", ext.ID(), err))
 		return
 	}
 	for _, dep := range deps {
 		if err := r.graph.AddEdge(ext.ID(), dep); err != nil {
-			r.err = fmt.Errorf("dependency %s -> %s: %v", ext.ID(), dep, err)
+			r.errs = append(r.errs, fmt.Errorf("dependency %s -> %s: %v", ext.ID(), dep, err))
 			return
 		}
 	}
 }
 
-// Err returns the first error encountered during blueprint execution.
+// require validates that a required field is not empty, appends an error
+// if it is, and returns false to signal the caller to bail out.
+func (r *Run) require(resource, field, value string) bool {
+	if value == "" {
+		r.errs = append(r.errs, fmt.Errorf("%s requires %s (got empty string)", resource, field))
+		return false
+	}
+	return true
+}
+
+// Err returns all errors encountered during blueprint execution, joined.
 func (r *Run) Err() error {
-	return r.err
+	return errors.Join(r.errs...)
 }
 
 // Graph returns the resource dependency graph for engine processing.
@@ -63,74 +71,64 @@ func (r *Run) Platform() platform.Info {
 
 // Include runs another registered blueprint within this Run context.
 func (r *Run) Include(name string) {
-	if r.err != nil {
-		return
-	}
 	if r.app == nil {
-		r.err = fmt.Errorf("Include(%q): no app context", name)
+		r.errs = append(r.errs, fmt.Errorf("Include(%q): no app context", name))
 		return
 	}
 	entry, ok := r.app.blueprints[name]
 	if !ok {
-		r.err = fmt.Errorf("Include(%q): blueprint not registered", name)
+		r.errs = append(r.errs, fmt.Errorf("Include(%q): blueprint not registered", name))
 		return
 	}
 	entry.fn(r)
 }
 
 func (r *Run) File(path string, opts FileOpts) {
-	if err := requireNotEmpty("File", "path", path); err != nil {
-		r.err = err
+	if !r.require("File", "path", path) {
 		return
 	}
-	r.addResource(newFileExtension(path, opts), opts.DependsOn)
+	r.addResource(newFileExtension(path, opts), opts.Meta.DependsOn)
 }
 
 func (r *Run) Package(name string, opts PackageOpts) {
-	if err := requireNotEmpty("Package", "name", name); err != nil {
-		r.err = err
+	if !r.require("Package", "name", name) {
 		return
 	}
 	if opts.State == "" {
 		opts.State = Present
 	}
-	r.addResource(newPackageExtension(name, opts, r.platform.PkgManager), opts.DependsOn)
+	r.addResource(newPackageExtension(name, opts, r.platform.PkgManager), opts.Meta.DependsOn)
 }
 
 func (r *Run) Service(name string, opts ServiceOpts) {
-	if err := requireNotEmpty("Service", "name", name); err != nil {
-		r.err = err
+	if !r.require("Service", "name", name) {
 		return
 	}
 	if opts.State == "" {
 		opts.State = Running
 	}
-	r.addResource(newServiceExtension(name, opts, r.platform.InitSystem), opts.DependsOn)
+	r.addResource(newServiceExtension(name, opts, r.platform.InitSystem), opts.Meta.DependsOn)
 }
 
 func (r *Run) Exec(name string, opts ExecOpts) {
-	if err := requireNotEmpty("Exec", "name", name); err != nil {
-		r.err = err
+	if !r.require("Exec", "name", name) {
 		return
 	}
-	if err := requireNotEmpty("Exec", "command", opts.Command); err != nil {
-		r.err = err
+	if !r.require("Exec", "command", opts.Command) {
 		return
 	}
-	r.addResource(newExecExtension(name, opts), opts.DependsOn)
+	r.addResource(newExecExtension(name, opts), opts.Meta.DependsOn)
 }
 
 func (r *Run) User(name string, opts UserOpts) {
-	if err := requireNotEmpty("User", "name", name); err != nil {
-		r.err = err
+	if !r.require("User", "name", name) {
 		return
 	}
-	r.addResource(newUserExtension(name, opts), opts.DependsOn)
+	r.addResource(newUserExtension(name, opts), opts.Meta.DependsOn)
 }
 
 func (r *Run) Firewall(name string, opts FirewallOpts) {
-	if err := requireNotEmpty("Firewall", "name", name); err != nil {
-		r.err = err
+	if !r.require("Firewall", "name", name) {
 		return
 	}
 	if opts.Protocol == "" {
@@ -142,12 +140,5 @@ func (r *Run) Firewall(name string, opts FirewallOpts) {
 	if opts.Action == "" {
 		opts.Action = "allow"
 	}
-	r.addResource(newFirewallExtension(name, opts), opts.DependsOn)
-}
-
-func requireNotEmpty(resource, field, value string) error {
-	if value == "" {
-		return fmt.Errorf("%s requires %s (got empty string)", resource, field)
-	}
-	return nil
+	r.addResource(newFirewallExtension(name, opts), opts.Meta.DependsOn)
 }

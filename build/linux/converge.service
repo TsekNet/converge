@@ -13,9 +13,8 @@ KillSignal=SIGTERM
 TimeoutStopSec=30
 
 # Hardening
-ProtectSystem=full
 ProtectHome=read-only
-NoNewPrivileges=no
+NoNewPrivileges=yes
 PrivateTmp=yes
 
 # Logging: journalctl -u converge

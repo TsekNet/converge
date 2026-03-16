@@ -60,6 +60,18 @@ func (r *Registry) Watch(ctx context.Context, events chan<- extensions.Event) er
 			continue
 		}
 
+		// Re-register BEFORE sending the event to minimize the monitoring gap.
+		err = windows.RegNotifyChangeKeyValue(
+			windows.Handle(key),
+			false,
+			windows.REG_NOTIFY_CHANGE_LAST_SET,
+			event,
+			true,
+		)
+		if err != nil {
+			return fmt.Errorf("RegNotifyChangeKeyValue (re-register): %w", err)
+		}
+
 		select {
 		case events <- extensions.Event{
 			ResourceID: r.ID(),

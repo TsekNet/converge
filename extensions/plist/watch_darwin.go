@@ -27,11 +27,14 @@ func (p *Plist) Watch(ctx context.Context, events chan<- extensions.Event) error
 	if err != nil {
 		return err
 	}
-	defer func() { unix.Close(fd) }()
 
 	for {
 		select {
 		case <-ctx.Done():
+			if fd != -1 {
+				unix.Close(fd)
+				fd = -1
+			}
 			return nil
 		default:
 		}
@@ -50,6 +53,9 @@ func (p *Plist) Watch(ctx context.Context, events chan<- extensions.Event) error
 			continue
 		}
 		if err != nil {
+			if fd != -1 {
+				unix.Close(fd)
+			}
 			return fmt.Errorf("kevent: %w", err)
 		}
 		if n == 0 {
@@ -59,6 +65,7 @@ func (p *Plist) Watch(ctx context.Context, events chan<- extensions.Event) error
 		// Re-establish watch after delete.
 		if out[0].Fflags&(unix.NOTE_DELETE|unix.NOTE_RENAME) != 0 {
 			unix.Close(fd)
+			fd = -1
 			time.Sleep(50 * time.Millisecond)
 			newFd, newFflags, err := openPlistWatch(path)
 			if err == nil {
@@ -74,6 +81,10 @@ func (p *Plist) Watch(ctx context.Context, events chan<- extensions.Event) error
 			Time:       time.Now(),
 		}:
 		case <-ctx.Done():
+			if fd != -1 {
+				unix.Close(fd)
+				fd = -1
+			}
 			return nil
 		}
 	}

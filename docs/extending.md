@@ -53,6 +53,23 @@ type Poller interface {
 
 Extensions implementing neither fall back to the daemon's default poll interval (30 seconds).
 
+### Event Struct Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ResourceID` | `string` | Unique identifier of the resource that triggered the event (e.g. `file:/etc/motd`) |
+| `Kind` | `EventKind` | How the event was generated (see constants below) |
+| `Detail` | `string` | Human-readable context, such as `"inotify"`, `"kqueue"`, or `"RegNotifyChangeKeyValue"` |
+| `Time` | `time.Time` | Timestamp when the event was created |
+
+### EventKind Constants
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `EventWatch` | `0` | OS-level watcher detected a change |
+| `EventPoll` | `1` | Periodic poll detected drift |
+| `EventRetry` | `2` | Scheduled retry after a previous failure |
+
 ---
 
 ## Example: Adding a New Package Manager (dnf)

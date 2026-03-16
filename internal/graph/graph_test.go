@@ -92,15 +92,15 @@ func TestAddEdge(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "cycle detected",
+			name: "duplicate edge is silently ignored",
 			setup: func(g *Graph) {
 				g.AddNode(mock("a", "A"))
 				g.AddNode(mock("b", "B"))
 				g.AddEdge("a", "b")
 			},
-			from:    "b",
-			to:      "a",
-			wantErr: true,
+			from:    "a",
+			to:      "b",
+			wantErr: false,
 		},
 		{
 			name: "missing dependency node",
@@ -222,6 +222,21 @@ func TestTopologicalLayers(t *testing.T) {
 			}
 			tt.verify(t, layers)
 		})
+	}
+}
+
+func TestTopologicalLayers_CycleDetection(t *testing.T) {
+	t.Parallel()
+
+	g := New()
+	g.AddNode(mock("a", "A"))
+	g.AddNode(mock("b", "B"))
+	g.AddEdge("a", "b")
+	g.AddEdge("b", "a") // creates cycle, accepted by AddEdge (lazy detection)
+
+	_, err := g.TopologicalLayers()
+	if err == nil {
+		t.Fatal("expected cycle error from TopologicalLayers, got nil")
 	}
 }
 

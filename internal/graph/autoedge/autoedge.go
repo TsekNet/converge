@@ -85,9 +85,11 @@ func serviceToConfigFile(g *graph.Graph) error {
 				continue
 			}
 			filePath := strings.TrimPrefix(fileID, "file:")
-			// Match as a path component (/svcName/) or in the base filename.
+			// Match as a path component (/svcName/) or exact base filename with known config extension.
+			base := filepath.Base(filePath)
 			if strings.Contains(filePath, "/"+svcName+"/") ||
-				strings.Contains(filepath.Base(filePath), svcName) {
+				base == svcName+".conf" || base == svcName+".cfg" ||
+				base == svcName+".yaml" || base == svcName+".yml" {
 				tryAddEdge(g, svcID, fileID)
 			}
 		}
@@ -97,6 +99,10 @@ func serviceToConfigFile(g *graph.Graph) error {
 
 // tryAddEdge adds an edge if it won't create a cycle.
 func tryAddEdge(g *graph.Graph, fromID, toID string) {
+	if g.WouldCycle(fromID, toID) {
+		deck.Warningf("auto-edge %s -> %s skipped: would create cycle", fromID, toID)
+		return
+	}
 	if err := g.AddEdge(fromID, toID); err != nil {
 		deck.Warningf("auto-edge %s -> %s skipped: %v", fromID, toID, err)
 	}

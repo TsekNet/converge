@@ -24,28 +24,31 @@ const (
 	Stopped ServiceState = "stopped"
 )
 
-type FileOpts struct {
-	Content   string
-	Mode      os.FileMode
-	Owner     string
-	Group     string
-	Append    bool
-	Critical  bool
+// ResourceMeta holds common metadata shared by all Opts structs.
+type ResourceMeta struct {
 	DependsOn []string
+	Critical  bool
+}
+
+type FileOpts struct {
+	Content string
+	Mode    os.FileMode
+	Owner   string
+	Group   string
+	Append  bool
+	Meta    ResourceMeta
 }
 
 type PackageOpts struct {
-	State     ResourceState
-	Critical  bool
-	DependsOn []string
+	State ResourceState
+	Meta  ResourceMeta
 }
 
 type ServiceOpts struct {
 	State       ServiceState
 	Enable      bool
 	StartupType string // "auto", "delayed-auto", "manual", "disabled" (Windows SCM)
-	Critical    bool
-	DependsOn   []string
+	Meta        ResourceMeta
 }
 
 type ExecOpts struct {
@@ -56,58 +59,51 @@ type ExecOpts struct {
 	Env        []string
 	Retries    int
 	RetryDelay time.Duration
-	Critical   bool
-	DependsOn  []string
+	Meta       ResourceMeta
 }
 
 type UserOpts struct {
-	Groups    []string
-	Shell     string
-	Home      string
-	System    bool
-	Critical  bool
-	DependsOn []string
+	Groups []string
+	Shell  string
+	Home   string
+	System bool
+	Meta   ResourceMeta
 }
 
 type RegistryOpts struct {
-	Value     string
-	Type      string
-	Data      any
-	State     ResourceState // Present (default) or Absent
-	Critical  bool
-	DependsOn []string
+	Value string
+	Type  string
+	Data  any
+	State ResourceState // Present (default) or Absent
+	Meta  ResourceMeta
 }
 
 type SecurityPolicyOpts struct {
-	Category  string // "password" or "lockout"
-	Key       string
-	Value     string
-	Critical  bool
-	DependsOn []string
+	Category string // "password" or "lockout"
+	Key      string
+	Value    string
+	Meta     ResourceMeta
 }
 
 type AuditPolicyOpts struct {
 	Subcategory string
 	Success     bool
 	Failure     bool
-	Critical    bool
-	DependsOn   []string
+	Meta        ResourceMeta
 }
 
 type SysctlOpts struct {
-	Value     string
-	Persist   bool
-	Critical  bool
-	DependsOn []string
+	Value   string
+	Persist bool
+	Meta    ResourceMeta
 }
 
 type PlistOpts struct {
-	Key       string
-	Value     any
-	Type      string // "bool", "int", "float", "string"
-	Host      bool   // true = /Library/Preferences (system-wide), false = ~/Library/Preferences
-	Critical  bool
-	DependsOn []string
+	Key   string
+	Value any
+	Type  string // "bool", "int", "float", "string"
+	Host  bool   // true = /Library/Preferences (system-wide), false = ~/Library/Preferences
+	Meta  ResourceMeta
 }
 
 type FirewallOpts struct {
@@ -118,6 +114,5 @@ type FirewallOpts struct {
 	Source    string // Optional source address/CIDR
 	Dest      string // Optional destination address/CIDR
 	State     ResourceState
-	Critical  bool
-	DependsOn []string
+	Meta      ResourceMeta
 }

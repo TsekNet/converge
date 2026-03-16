@@ -110,6 +110,8 @@ Defined in `internal/exit/exit.go`. By default, converge exits 0 on success and 
 
 Converge runs as a system service on all platforms. Packages install and start the service automatically.
 
+The default service runs `converge serve baseline`. To change the blueprint, edit the service configuration for your platform.
+
 ### Linux (systemd)
 
 ```bash

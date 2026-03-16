@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"runtime"
 	"syscall"
 
 	"github.com/TsekNet/converge/internal/daemon"
 	"github.com/TsekNet/converge/internal/exit"
+	"github.com/TsekNet/converge/internal/platform"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +24,7 @@ var serveCmd = &cobra.Command{
 	Long:  "Run as a persistent daemon that monitors all resources for state drift and re-converges immediately. Use --once to exit after initial convergence.",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		if !isRoot() {
+		if !platform.IsRoot() {
 			exitWithError(exit.NotRoot, fmt.Errorf("converge serve requires root/administrator privileges"))
 		}
 
@@ -61,14 +61,3 @@ func init() {
 	rootCmd.AddCommand(serveCmd)
 }
 
-func isRoot() bool {
-	if runtime.GOOS == "windows" {
-		f, err := os.Open("\\\\.\\PHYSICALDRIVE0")
-		if err != nil {
-			return false
-		}
-		f.Close()
-		return true
-	}
-	return os.Geteuid() == 0
-}

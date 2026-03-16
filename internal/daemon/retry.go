@@ -25,9 +25,10 @@ type ResourceStatus struct {
 }
 
 // retryManager tracks per-resource retry/backoff/compliance state.
+// The states map is write-once during construction (register), so no
+// mutex is needed for map access.
 type retryManager struct {
 	states     map[string]*resourceState
-	mu         sync.RWMutex
 	maxRetries int
 	baseDelay  time.Duration
 }
@@ -54,8 +55,6 @@ func (rm *retryManager) register(id string) {
 }
 
 func (rm *retryManager) status(id string) ResourceStatus {
-	rm.mu.RLock()
-	defer rm.mu.RUnlock()
 	s, ok := rm.states[id]
 	if !ok {
 		return ResourceStatus{}
@@ -72,6 +71,9 @@ func (rm *retryManager) status(id string) ResourceStatus {
 // shouldProcess determines if an event should trigger convergence.
 func (rm *retryManager) shouldProcess(id string, kind extensions.EventKind) bool {
 	s := rm.states[id]
+	if s == nil {
+		return false
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -95,6 +97,9 @@ func (rm *retryManager) shouldProcess(id string, kind extensions.EventKind) bool
 // isNoncompliant checks if a resource is marked noncompliant.
 func (rm *retryManager) isNoncompliant(id string) bool {
 	s := rm.states[id]
+	if s == nil {
+		return false
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.compliance == Noncompliant
@@ -103,6 +108,9 @@ func (rm *retryManager) isNoncompliant(id string) bool {
 // reset marks a resource as compliant with zero retries.
 func (rm *retryManager) reset(id string) {
 	s := rm.states[id]
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	s.retryCount = 0
 	s.compliance = Compliant
@@ -117,6 +125,9 @@ const maxRetryDelay = 5 * time.Minute
 // Returns the backoff delay, or 0 if noncompliant (no more retries).
 func (rm *retryManager) recordFailure(id string, err error) time.Duration {
 	s := rm.states[id]
+	if s == nil {
+		return 0
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

@@ -25,7 +25,7 @@ type Graph struct {
 	order    []string            // insertion order for deterministic iteration
 	inDegree map[string]int      // number of dependencies per node
 	children map[string][]string // children[id] = nodes that depend on id
-	parents  map[string][]string // parents[id] = nodes that id depends on (for cycle detection)
+	edges    map[[2]string]bool  // deduplicates edges
 }
 
 // New creates an empty resource graph.
@@ -34,7 +34,7 @@ func New() *Graph {
 		nodes:    make(map[string]*Node),
 		inDegree: make(map[string]int),
 		children: make(map[string][]string),
-		parents:  make(map[string][]string),
+		edges:    make(map[[2]string]bool),
 	}
 }
 
@@ -53,7 +53,8 @@ func (g *Graph) AddNode(ext extensions.Extension) error {
 }
 
 // AddEdge declares that fromID depends on toID (toID must run before fromID).
-// Returns an error if either node is missing or the edge would create a cycle.
+// Duplicate edges are silently ignored. Cycles are detected lazily by
+// TopologicalLayers (Kahn's algorithm), keeping AddEdge O(1).
 func (g *Graph) AddEdge(fromID, toID string) error {
 	if _, ok := g.nodes[fromID]; !ok {
 		return fmt.Errorf("resource %q not found", fromID)
@@ -65,36 +66,15 @@ func (g *Graph) AddEdge(fromID, toID string) error {
 		return fmt.Errorf("self-dependency: %s", fromID)
 	}
 
-	// Check if adding this edge would create a cycle:
-	// toID depends on fromID (transitively) -> cycle.
-	if g.reaches(toID, fromID) {
-		return fmt.Errorf("edge %s -> %s would create a cycle", fromID, toID)
+	key := [2]string{fromID, toID}
+	if g.edges[key] {
+		return nil // duplicate, skip silently
 	}
+	g.edges[key] = true
 
 	g.inDegree[fromID]++
 	g.children[toID] = append(g.children[toID], fromID)
-	g.parents[fromID] = append(g.parents[fromID], toID)
 	return nil
-}
-
-// reaches returns true if `from` can reach `to` by following dependency edges.
-// Used for cycle detection before adding a new edge.
-func (g *Graph) reaches(from, to string) bool {
-	visited := make(map[string]bool, len(g.nodes))
-	stack := []string{from}
-	for len(stack) > 0 {
-		cur := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if cur == to {
-			return true
-		}
-		if visited[cur] {
-			continue
-		}
-		visited[cur] = true
-		stack = append(stack, g.parents[cur]...)
-	}
-	return false
 }
 
 // Node returns the node with the given ID, or nil if not found.
@@ -102,13 +82,8 @@ func (g *Graph) Node(id string) *Node {
 	return g.nodes[id]
 }
 
-// Nodes returns all nodes in the graph (unordered).
+// Nodes returns all nodes in insertion order for deterministic iteration.
 func (g *Graph) Nodes() []*Node {
-	out := make([]string, 0, len(g.nodes))
-	for id := range g.nodes {
-		out = append(out, id)
-	}
-	// Use insertion order for deterministic iteration.
 	result := make([]*Node, 0, len(g.order))
 	for _, id := range g.order {
 		result = append(result, g.nodes[id])
@@ -136,6 +111,36 @@ func (g *Graph) Flatten() ([]extensions.Extension, error) {
 		all = append(all, layer...)
 	}
 	return all, nil
+}
+
+// WouldCycle returns true if adding an edge fromID->toID would create a cycle.
+// An edge fromID->toID means fromID depends on toID (toID runs first).
+// A cycle exists if fromID is already reachable from toID via the dependency
+// graph: i.e., toID already (transitively) depends on fromID.
+func (g *Graph) WouldCycle(fromID, toID string) bool {
+	// BFS from fromID following children (dependents). If we reach toID,
+	// toID already transitively depends on fromID, so adding fromID->toID
+	// creates a cycle.
+	visited := make(map[string]bool, len(g.nodes))
+	queue := []string{fromID}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		if cur == toID {
+			return true
+		}
+		if visited[cur] {
+			continue
+		}
+		visited[cur] = true
+		queue = append(queue, g.children[cur]...)
+	}
+	return false
+}
+
+// Children returns the IDs of nodes that depend on the given node.
+func (g *Graph) Children(id string) []string {
+	return g.children[id]
 }
 
 // TopologicalLayers returns resources grouped by dependency depth.

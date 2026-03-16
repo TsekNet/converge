@@ -110,17 +110,18 @@ func (f *File) Watch(ctx context.Context, events chan<- extensions.Event) error 
 }
 
 func (f *File) parseNotifications(buf []byte, absPath string, events chan<- extensions.Event, ctx context.Context) {
-	offset := uint32(0)
-	headerSize := uint32(unsafe.Sizeof(fileNotifyInformation{})) - 2 // FileName is variable
+	headerSize := int(unsafe.Offsetof(fileNotifyInformation{}.FileName))
+	bufLen := len(buf)
+	offset := 0
 
 	for {
-		if offset+headerSize > uint32(len(buf)) {
+		if offset+headerSize > bufLen {
 			break
 		}
 		info := (*fileNotifyInformation)(unsafe.Pointer(&buf[offset]))
 
-		nameBytes := info.FileNameLength
-		if offset+headerSize+nameBytes > uint32(len(buf)) {
+		nameBytes := int(info.FileNameLength)
+		if offset+headerSize+nameBytes > bufLen {
 			break
 		}
 
@@ -144,7 +145,7 @@ func (f *File) parseNotifications(buf []byte, absPath string, events chan<- exte
 		if info.NextEntryOffset == 0 {
 			break
 		}
-		offset += info.NextEntryOffset
+		offset += int(info.NextEntryOffset)
 	}
 }
 

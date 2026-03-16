@@ -3,13 +3,11 @@
 package dsl
 
 func (r *Run) Sysctl(key string, opts SysctlOpts) {
-	if err := requireNotEmpty("Sysctl", "key", key); err != nil {
-		r.err = err
+	if !r.require("Sysctl", "key", key) {
 		return
 	}
-	if err := requireNotEmpty("Sysctl", "value", opts.Value); err != nil {
-		r.err = err
+	if !r.require("Sysctl", "value", opts.Value) {
 		return
 	}
-	r.addResource(newSysctlExtension(key, opts), opts.DependsOn)
+	r.addResource(newSysctlExtension(key, opts), opts.Meta.DependsOn)
 }
