@@ -66,7 +66,9 @@ func fileToParentDir(g *graph.Graph) error {
 	return nil
 }
 
-// serviceToConfigFile: service:X depends on file:*X* (file path contains service name).
+// serviceToConfigFile: service:X depends on files whose path contains the
+// service name as a path component or base filename. Requires the service name
+// to be at least 3 characters to avoid false positives with short names.
 func serviceToConfigFile(g *graph.Graph) error {
 	for _, svcNode := range g.Nodes() {
 		svcID := svcNode.Ext.ID()
@@ -74,13 +76,18 @@ func serviceToConfigFile(g *graph.Graph) error {
 			continue
 		}
 		svcName := strings.TrimPrefix(svcID, "service:")
+		if len(svcName) < 3 {
+			continue // skip short names to avoid false positives
+		}
 		for _, fileNode := range g.Nodes() {
 			fileID := fileNode.Ext.ID()
 			if !strings.HasPrefix(fileID, "file:") {
 				continue
 			}
 			filePath := strings.TrimPrefix(fileID, "file:")
-			if strings.Contains(filePath, svcName) {
+			// Match as a path component (/svcName/) or in the base filename.
+			if strings.Contains(filePath, "/"+svcName+"/") ||
+				strings.Contains(filepath.Base(filePath), svcName) {
 				tryAddEdge(g, svcID, fileID)
 			}
 		}

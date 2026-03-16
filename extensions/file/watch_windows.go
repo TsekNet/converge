@@ -59,28 +59,35 @@ func (f *File) Watch(ctx context.Context, events chan<- extensions.Event) error 
 		windows.FILE_NOTIFY_CHANGE_LAST_WRITE |
 		windows.FILE_NOTIFY_CHANGE_CREATION)
 
+	pendingOp := false
+
 	for {
 		select {
 		case <-ctx.Done():
+			if pendingOp {
+				windows.CancelIo(handle)
+			}
 			return nil
 		default:
 		}
 
-		err = windows.ReadDirectoryChanges(
-			handle,
-			&buf[0],
-			uint32(bufSize),
-			false, // watch tree
-			filter,
-			nil,
-			overlap,
-			0,
-		)
-		if err != nil {
-			return fmt.Errorf("ReadDirectoryChanges: %w", err)
+		if !pendingOp {
+			err = windows.ReadDirectoryChanges(
+				handle,
+				&buf[0],
+				uint32(bufSize),
+				false,
+				filter,
+				nil,
+				overlap,
+				0,
+			)
+			if err != nil {
+				return fmt.Errorf("ReadDirectoryChanges: %w", err)
+			}
+			pendingOp = true
 		}
 
-		// Wait with timeout so we can check ctx.Done().
 		r, err := windows.WaitForSingleObject(event, 500)
 		if err != nil {
 			return fmt.Errorf("WaitForSingleObject: %w", err)
@@ -90,33 +97,54 @@ func (f *File) Watch(ctx context.Context, events chan<- extensions.Event) error 
 		}
 
 		var bytesReturned uint32
-		windows.GetOverlappedResult(handle, overlap, &bytesReturned, false)
+		if err := windows.GetOverlappedResult(handle, overlap, &bytesReturned, false); err != nil {
+			pendingOp = false
+			continue
+		}
+		pendingOp = false
 
 		if bytesReturned > 0 {
-			// Parse FILE_NOTIFY_INFORMATION to check if our target file changed.
-			offset := uint32(0)
-			for {
-				info := (*fileNotifyInformation)(unsafe.Pointer(&buf[offset]))
-				nameLen := info.FileNameLength / 2
-				name := windows.UTF16ToString((*[1 << 15]uint16)(unsafe.Pointer(&info.FileName))[:nameLen:nameLen])
-				if filepath.Base(absPath) == name {
-					select {
-					case events <- extensions.Event{
-						ResourceID: f.ID(),
-						Reason:     "ReadDirectoryChangesW",
-						Time:       time.Now(),
-					}:
-					case <-ctx.Done():
-						return nil
-					}
-					break
-				}
-				if info.NextEntryOffset == 0 {
-					break
-				}
-				offset += info.NextEntryOffset
-			}
+			f.parseNotifications(buf[:bytesReturned], absPath, events, ctx)
 		}
+	}
+}
+
+func (f *File) parseNotifications(buf []byte, absPath string, events chan<- extensions.Event, ctx context.Context) {
+	offset := uint32(0)
+	headerSize := uint32(unsafe.Sizeof(fileNotifyInformation{})) - 2 // FileName is variable
+
+	for {
+		if offset+headerSize > uint32(len(buf)) {
+			break
+		}
+		info := (*fileNotifyInformation)(unsafe.Pointer(&buf[offset]))
+
+		nameBytes := info.FileNameLength
+		if offset+headerSize+nameBytes > uint32(len(buf)) {
+			break
+		}
+
+		nameLen := nameBytes / 2
+		nameSlice := unsafe.Slice((*uint16)(unsafe.Pointer(&info.FileName)), nameLen)
+		name := windows.UTF16ToString(nameSlice)
+
+		if filepath.Base(absPath) == name {
+			select {
+			case events <- extensions.Event{
+				ResourceID: f.ID(),
+				Reason:     "ReadDirectoryChangesW",
+				Time:       time.Now(),
+			}:
+			case <-ctx.Done():
+				return
+			}
+			break
+		}
+
+		if info.NextEntryOffset == 0 {
+			break
+		}
+		offset += info.NextEntryOffset
 	}
 }
 

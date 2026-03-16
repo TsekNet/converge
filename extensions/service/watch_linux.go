@@ -12,7 +12,8 @@ import (
 )
 
 // Watch uses D-Bus to subscribe to systemd PropertiesChanged signals for
-// the service unit. When the unit's ActiveState changes, an event is sent.
+// the service unit. When the unit's ActiveState or SubState changes, an
+// event is sent.
 func (s *Service) Watch(ctx context.Context, events chan<- extensions.Event) error {
 	conn, err := dbus.ConnectSystemBus()
 	if err != nil {
@@ -23,12 +24,14 @@ func (s *Service) Watch(ctx context.Context, events chan<- extensions.Event) err
 	unitName := s.Name + ".service"
 	objectPath := dbus.ObjectPath("/org/freedesktop/systemd1/unit/" + escapeUnitName(unitName))
 
-	// Subscribe to PropertiesChanged signals for this unit.
 	matchRule := fmt.Sprintf(
 		"type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',path='%s'",
 		objectPath,
 	)
-	conn.BusObject().Call("org.freedesktop.DBus.AddMatch", 0, matchRule)
+	call := conn.BusObject().Call("org.freedesktop.DBus.AddMatch", 0, matchRule)
+	if call.Err != nil {
+		return fmt.Errorf("AddMatch for %s: %w", unitName, call.Err)
+	}
 
 	signals := make(chan *dbus.Signal, 16)
 	conn.Signal(signals)
@@ -40,6 +43,20 @@ func (s *Service) Watch(ctx context.Context, events chan<- extensions.Event) err
 		case sig := <-signals:
 			if sig == nil {
 				continue
+			}
+			// Filter: only emit events for state-related property changes.
+			if len(sig.Body) >= 2 {
+				iface, ok := sig.Body[0].(string)
+				if ok && iface != "org.freedesktop.systemd1.Unit" {
+					continue
+				}
+				if changed, ok := sig.Body[1].(map[string]dbus.Variant); ok {
+					_, hasActive := changed["ActiveState"]
+					_, hasSub := changed["SubState"]
+					if !hasActive && !hasSub {
+						continue
+					}
+				}
 			}
 			select {
 			case events <- extensions.Event{
@@ -55,7 +72,6 @@ func (s *Service) Watch(ctx context.Context, events chan<- extensions.Event) err
 }
 
 // escapeUnitName converts a systemd unit name to a D-Bus object path component.
-// Characters other than [a-zA-Z0-9] are escaped as _XX (hex).
 func escapeUnitName(name string) string {
 	var out []byte
 	for i := 0; i < len(name); i++ {

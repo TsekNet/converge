@@ -215,14 +215,17 @@ func TestNodes(t *testing.T) {
 	}
 }
 
-func TestAllExtensions(t *testing.T) {
+func TestOrderedExtensions(t *testing.T) {
 	g := New()
 	g.AddNode(mock("a", "A"))
 	g.AddNode(mock("b", "B"))
 
-	exts := g.AllExtensions()
+	exts := g.OrderedExtensions()
 	if len(exts) != 2 {
 		t.Fatalf("got %d extensions, want 2", len(exts))
+	}
+	if exts[0].ID() != "a" || exts[1].ID() != "b" {
+		t.Errorf("wrong order: got [%s, %s], want [a, b]", exts[0].ID(), exts[1].ID())
 	}
 }
 

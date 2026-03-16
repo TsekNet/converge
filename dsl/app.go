@@ -104,13 +104,20 @@ func (a *App) RunPlan(name string, printer output.Printer) (int, error) {
 	return engine.RunPlanDAG(g, printer, a.EngineOpts)
 }
 
-// runBlueprint executes a blueprint function and recovers panics (e.g.
-// duplicate resources, missing dependencies) as errors.
+// runBlueprint executes a blueprint function and recovers expected panics
+// (duplicate resources, missing dependencies) as errors. Unexpected panics
+// (nil pointer, index out of range) are re-panicked to preserve stack traces.
 func runBlueprint(fn Blueprint, run *Run) (err error) {
 	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("%v", r)
+		r := recover()
+		if r == nil {
+			return
 		}
+		if s, ok := r.(string); ok {
+			err = fmt.Errorf("%s", s)
+			return
+		}
+		panic(r)
 	}()
 	fn(run)
 	return nil

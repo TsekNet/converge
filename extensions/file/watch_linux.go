@@ -5,6 +5,7 @@ package file
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 	"unsafe"
@@ -15,7 +16,8 @@ import (
 
 // Watch uses inotify to monitor the file for changes. It blocks until
 // ctx is cancelled, sending events when the file is modified, created,
-// deleted, or has its attributes changed.
+// deleted, or has its attributes changed. Re-establishes the watch
+// after delete/move events.
 func (f *File) Watch(ctx context.Context, events chan<- extensions.Event) error {
 	fd, err := unix.InotifyInit1(unix.IN_CLOEXEC | unix.IN_NONBLOCK)
 	if err != nil {
@@ -27,44 +29,38 @@ func (f *File) Watch(ctx context.Context, events chan<- extensions.Event) error 
 	if err != nil {
 		return fmt.Errorf("abs path: %w", err)
 	}
-
-	// Watch the file itself if it exists.
-	mask := uint32(unix.IN_MODIFY | unix.IN_CREATE | unix.IN_DELETE_SELF | unix.IN_ATTRIB | unix.IN_MOVE_SELF)
-	wd, err := unix.InotifyAddWatch(fd, absPath, mask)
-	if err != nil {
-		// File may not exist yet: watch the parent directory instead.
-		dir := filepath.Dir(absPath)
-		wd, err = unix.InotifyAddWatch(fd, dir, unix.IN_CREATE|unix.IN_MOVED_TO)
-		if err != nil {
-			return fmt.Errorf("inotify_add_watch %s: %w", dir, err)
-		}
-		_ = wd
-	} else {
-		_ = wd
-	}
-
-	// Also watch the parent directory for file creation (handles delete + recreate).
 	dir := filepath.Dir(absPath)
-	unix.InotifyAddWatch(fd, dir, unix.IN_CREATE|unix.IN_MOVED_TO)
 
-	buf := make([]byte, 4096)
-
-	// Use epoll to make inotify reads interruptible via context cancellation.
 	epfd, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
 	if err != nil {
 		return fmt.Errorf("epoll_create1: %w", err)
 	}
 	defer unix.Close(epfd)
 
-	err = unix.EpollCtl(epfd, unix.EPOLL_CTL_ADD, fd, &unix.EpollEvent{
+	if err := unix.EpollCtl(epfd, unix.EPOLL_CTL_ADD, fd, &unix.EpollEvent{
 		Events: unix.EPOLLIN,
 		Fd:     int32(fd),
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("epoll_ctl: %w", err)
 	}
 
+	// Always watch the parent directory for file creation.
+	if _, err := unix.InotifyAddWatch(fd, dir, unix.IN_CREATE|unix.IN_MOVED_TO); err != nil {
+		return fmt.Errorf("inotify_add_watch dir %s: %w", dir, err)
+	}
+
+	// Watch the file itself if it exists.
+	fileMask := uint32(unix.IN_MODIFY | unix.IN_CREATE | unix.IN_DELETE_SELF | unix.IN_ATTRIB | unix.IN_MOVE_SELF)
+	addFileWatch := func() {
+		unix.InotifyAddWatch(fd, absPath, fileMask)
+	}
+	if _, err := os.Stat(absPath); err == nil {
+		addFileWatch()
+	}
+
+	buf := make([]byte, 4096)
 	epEvents := make([]unix.EpollEvent, 1)
+	eventSize := int(unsafe.Sizeof(unix.InotifyEvent{}))
 
 	for {
 		select {
@@ -73,7 +69,6 @@ func (f *File) Watch(ctx context.Context, events chan<- extensions.Event) error 
 		default:
 		}
 
-		// Wait with 500ms timeout so we can check ctx.Done() periodically.
 		n, err := unix.EpollWait(epfd, epEvents, 500)
 		if err == unix.EINTR {
 			continue
@@ -85,36 +80,38 @@ func (f *File) Watch(ctx context.Context, events chan<- extensions.Event) error 
 			continue
 		}
 
-		// Drain inotify events.
 		nBytes, err := unix.Read(fd, buf)
+		if err == unix.EAGAIN || nBytes == 0 {
+			continue
+		}
 		if err != nil {
-			if err == unix.EAGAIN {
-				continue
-			}
 			return fmt.Errorf("read inotify: %w", err)
 		}
 
-		// Parse inotify events to generate a single notification.
-		if nBytes > 0 {
-			hasRelevantEvent := false
-			offset := 0
-			for offset < nBytes {
-				event := (*unix.InotifyEvent)(unsafe.Pointer(&buf[offset]))
-				offset += int(unsafe.Sizeof(*event)) + int(event.Len)
-				hasRelevantEvent = true
-			}
+		needsRewire := false
+		offset := 0
+		for offset+eventSize <= nBytes {
+			event := (*unix.InotifyEvent)(unsafe.Pointer(&buf[offset]))
+			offset += eventSize + int(event.Len)
 
-			if hasRelevantEvent {
-				select {
-				case events <- extensions.Event{
-					ResourceID: f.ID(),
-					Reason:     "inotify",
-					Time:       time.Now(),
-				}:
-				case <-ctx.Done():
-					return nil
-				}
+			if event.Mask&(unix.IN_DELETE_SELF|unix.IN_MOVE_SELF) != 0 {
+				needsRewire = true
 			}
+		}
+
+		// Re-establish watch after delete/move.
+		if needsRewire {
+			addFileWatch()
+		}
+
+		select {
+		case events <- extensions.Event{
+			ResourceID: f.ID(),
+			Reason:     "inotify",
+			Time:       time.Now(),
+		}:
+		case <-ctx.Done():
+			return nil
 		}
 	}
 }

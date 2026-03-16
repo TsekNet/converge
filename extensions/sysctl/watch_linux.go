@@ -5,6 +5,7 @@ package sysctl
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 	"unsafe"
@@ -15,7 +16,14 @@ import (
 
 // Watch uses inotify to monitor the sysctl value file under /proc/sys/.
 func (s *Sysctl) Watch(ctx context.Context, events chan<- extensions.Event) error {
-	path := procSysBase + "/" + strings.ReplaceAll(s.Key, ".", "/")
+	if strings.Contains(s.Key, "..") {
+		return fmt.Errorf("sysctl key contains path traversal: %s", s.Key)
+	}
+
+	path := filepath.Clean(procSysBase + "/" + strings.ReplaceAll(s.Key, ".", "/"))
+	if !strings.HasPrefix(path, procSysBase+"/") {
+		return fmt.Errorf("sysctl key escapes /proc/sys: %s", s.Key)
+	}
 
 	fd, err := unix.InotifyInit1(unix.IN_CLOEXEC | unix.IN_NONBLOCK)
 	if err != nil {
@@ -23,8 +31,7 @@ func (s *Sysctl) Watch(ctx context.Context, events chan<- extensions.Event) erro
 	}
 	defer unix.Close(fd)
 
-	_, err = unix.InotifyAddWatch(fd, path, unix.IN_MODIFY)
-	if err != nil {
+	if _, err := unix.InotifyAddWatch(fd, path, unix.IN_MODIFY); err != nil {
 		return fmt.Errorf("inotify_add_watch %s: %w", path, err)
 	}
 
@@ -34,13 +41,16 @@ func (s *Sysctl) Watch(ctx context.Context, events chan<- extensions.Event) erro
 	}
 	defer unix.Close(epfd)
 
-	unix.EpollCtl(epfd, unix.EPOLL_CTL_ADD, fd, &unix.EpollEvent{
+	if err := unix.EpollCtl(epfd, unix.EPOLL_CTL_ADD, fd, &unix.EpollEvent{
 		Events: unix.EPOLLIN,
 		Fd:     int32(fd),
-	})
+	}); err != nil {
+		return fmt.Errorf("epoll_ctl: %w", err)
+	}
 
 	buf := make([]byte, 4096)
 	epEvents := make([]unix.EpollEvent, 1)
+	eventSize := int(unsafe.Sizeof(unix.InotifyEvent{}))
 
 	for {
 		select {
@@ -68,11 +78,11 @@ func (s *Sysctl) Watch(ctx context.Context, events chan<- extensions.Event) erro
 			return fmt.Errorf("read inotify: %w", err)
 		}
 
-		// Drain all events.
+		// Drain events with bounds checking.
 		offset := 0
-		for offset < nBytes {
+		for offset+eventSize <= nBytes {
 			event := (*unix.InotifyEvent)(unsafe.Pointer(&buf[offset]))
-			offset += int(unsafe.Sizeof(*event)) + int(event.Len)
+			offset += eventSize + int(event.Len)
 		}
 
 		select {

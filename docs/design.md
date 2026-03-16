@@ -57,7 +57,7 @@ The target is 10-year maintainability:
 
 - No custom DSL. It's Go.
 - No inheritance hierarchies. Blueprints compose via function calls.
-- No implicit behavior. If a resource does something, it's in the blueprint.
+- No implicit mutations. Auto-edges affect execution order, not what resources exist.
 - No magic variables. Parameters are explicit function arguments.
 
 ### One Way to Do Things
@@ -71,7 +71,7 @@ One error handling pattern (the `Critical` flag). One way to include shared logi
 | Mode | Privilege | Network | Mutations |
 |---------|-----------------|---------|-----------|
 | `plan` | Unprivileged | None | None (read-only `Check()` calls) |
-| `apply` | root / SYSTEM | None | Applies changes where `Check()` reports drift |
+| `serve` | root / SYSTEM | None | Applies changes where `Check()` reports drift, watches for further drift |
 
 - **No network by default.** Zero network calls during execution. All configuration is compiled in or read from local disk.
 - **No secrets in code.** Secrets come from AES-256-GCM encrypted config values via `r.Secret()`. Encrypted values use the `ENC[AES256:...]` format and are decrypted at runtime with a high-entropy key provided via `SetConfigKey()`, compiled into the binary at build time. No external key files, no environment variables. Decryption is fail-closed: missing keys or corrupted ciphertext return empty strings, never raw ciphertext.

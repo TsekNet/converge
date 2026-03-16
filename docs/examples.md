@@ -109,8 +109,9 @@ func main() {
 `Register` takes three arguments: name, description, and blueprint function. After building:
 
 ```bash
-converge plan myblueprint       # dry-run, show what would change
-converge apply myblueprint      # apply the blueprint
+converge plan myblueprint              # dry-run, show what would change
+sudo converge serve myblueprint        # run as persistent daemon
+sudo converge serve myblueprint --once # converge once and exit
 ```
 
 You can register as many blueprints as you want. Each becomes a subcommand target.
@@ -206,11 +207,21 @@ No containers, no VMs, no network calls.
 
 ## Resource Reference
 
-All option structs share a common field:
+All option structs share these common fields:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `Critical` | `bool` | `true` | If `true`, failure aborts the run. Set `false` for best-effort. |
+| `DependsOn` | `[]string` | `nil` | Explicit resource IDs this resource depends on (e.g. `[]string{"package:nginx"}`). Complements auto-edges. |
+
+**Auto-edges:** Dependencies are also detected automatically: `service:X` depends on `package:X`, files depend on parent directory files, and services depend on config files containing their name. Use `DependsOn` for dependencies auto-edges cannot detect:
+
+```go
+r.Exec("migrate", dsl.ExecOpts{
+    Command:   "/usr/bin/db-migrate",
+    DependsOn: []string{"package:postgresql"},
+})
+```
 
 ### File
 

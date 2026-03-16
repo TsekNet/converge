@@ -29,6 +29,30 @@ type CriticalResource interface {
 }
 ```
 
+### Daemon Mode: Watcher and Poller
+
+In daemon mode (`converge serve`), extensions can implement optional interfaces for drift detection:
+
+```go
+// Watcher blocks on native OS events (inotify, kqueue, dbus, etc.)
+// and sends events when the resource may have drifted.
+type Watcher interface {
+    Watch(ctx context.Context, events chan<- Event) error
+}
+
+// Poller overrides the default poll interval for resources without
+// native OS event support.
+type Poller interface {
+    PollInterval() time.Duration
+}
+```
+
+**When to implement Watcher:** if your resource type has a native OS mechanism for change notification (file system events, D-Bus signals, registry change notifications). See `extensions/file/watch_linux.go` for a reference implementation using inotify.
+
+**When to implement Poller:** if your resource type has no native events but needs a custom poll frequency. For example, packages poll every 5 minutes since package state rarely changes externally.
+
+Extensions implementing neither fall back to the daemon's default poll interval (30 seconds).
+
 ---
 
 ## Example: Adding a New Package Manager (dnf)

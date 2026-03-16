@@ -77,15 +77,6 @@ func (g *Graph) Nodes() []*Node {
 	return out
 }
 
-// AllExtensions returns all extensions in the graph (unordered).
-func (g *Graph) AllExtensions() []extensions.Extension {
-	out := make([]extensions.Extension, 0, len(g.nodes))
-	for _, n := range g.nodes {
-		out = append(out, n.Ext)
-	}
-	return out
-}
-
 // OrderedExtensions returns extensions in insertion order.
 func (g *Graph) OrderedExtensions() []extensions.Extension {
 	out := make([]extensions.Extension, 0, len(g.order))
@@ -93,6 +84,19 @@ func (g *Graph) OrderedExtensions() []extensions.Extension {
 		out = append(out, g.nodes[id].Ext)
 	}
 	return out
+}
+
+// Flatten returns all extensions in topological order (flattened layers).
+func (g *Graph) Flatten() ([]extensions.Extension, error) {
+	layers, err := g.TopologicalLayers()
+	if err != nil {
+		return nil, err
+	}
+	var all []extensions.Extension
+	for _, layer := range layers {
+		all = append(all, layer...)
+	}
+	return all, nil
 }
 
 // TopologicalLayers returns resources grouped by dependency depth.

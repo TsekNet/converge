@@ -71,7 +71,7 @@ converge plan my-server --detailed-exit-codes  # granular exit codes for CI
 | **Event-driven daemon** | `converge serve` watches for drift via OS events (inotify, dbus, etc.) |
 | **Auto-edges** | Implicit Service->Package, File->parent Dir dependencies |
 | **Retry + noncompliance** | Exponential backoff on failure, noncompliant after N retries |
-| **Plan / Apply** | Dry-run any blueprint before making changes |
+| **Plan / Serve** | Dry-run any blueprint, then serve as a persistent daemon |
 | **Parallel execution** | Concurrent resource application within each DAG layer |
 | **Firewall management** | Declarative firewall rules across Linux (nftables), macOS (pf), Windows (registry API) |
 | **Rollout sharding** | Percentage-based canary rollouts with `r.InShard()` keyed on hardware serial |

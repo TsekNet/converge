@@ -134,17 +134,10 @@ func setMaxNameLen(resources []extensions.Extension, printer output.Printer) {
 
 // RunPlanDAG checks all resources in topological order without applying changes.
 func RunPlanDAG(g *graph.Graph, printer output.Printer, opts Options) (int, error) {
-	layers, err := g.TopologicalLayers()
+	all, err := g.Flatten()
 	if err != nil {
 		return exit.Error, fmt.Errorf("building execution order: %w", err)
 	}
-
-	// Flatten for total count and name alignment.
-	var all []extensions.Extension
-	for _, layer := range layers {
-		all = append(all, layer...)
-	}
-
 	return RunPlan(all, printer, opts)
 }
 
@@ -157,11 +150,7 @@ func RunApplyDAG(g *graph.Graph, printer output.Printer, opts Options) (int, err
 		return exit.Error, fmt.Errorf("building execution order: %w", err)
 	}
 
-	// Flatten for total count and name alignment.
-	var all []extensions.Extension
-	for _, layer := range layers {
-		all = append(all, layer...)
-	}
+	all, _ := g.Flatten()
 
 	ctx := context.Background()
 	start := time.Now()

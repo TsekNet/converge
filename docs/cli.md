@@ -33,16 +33,6 @@ converge plan <blueprint>
 
 Runs `Check()` on every resource in topological order and prints a grouped diff. Does not require root.
 
-### converge apply
-
-Apply changes to reach desired state (run-once mode).
-
-```
-converge apply <blueprint>
-```
-
-Runs `Check()` then `Apply()` on out-of-sync resources in topological layer order. Requires root (exit 10 if not). Equivalent to `converge serve <blueprint> --once`.
-
 ### converge list
 
 List registered blueprints and/or extensions.

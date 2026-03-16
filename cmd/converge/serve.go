@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"github.com/TsekNet/converge/internal/daemon"
+	"github.com/TsekNet/converge/internal/exit"
 	"github.com/spf13/cobra"
 )
 
@@ -22,13 +24,17 @@ var serveCmd = &cobra.Command{
 	Long:  "Run as a persistent daemon that monitors all resources for state drift and re-converges immediately. Use --once to exit after initial convergence.",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		if !isRoot() {
+			exitWithError(exit.NotRoot, fmt.Errorf("converge serve requires root/administrator privileges"))
+		}
+
 		printer := makePrinter()
 		printer.Banner(app.Version())
 		printer.BlueprintHeader(args[0])
 
 		run, err := app.BuildGraph(args[0])
 		if err != nil {
-			exitWithError(1, err)
+			exitWithError(exit.Error, err)
 		}
 
 		opts := daemon.Options{
@@ -53,4 +59,16 @@ func init() {
 	serveCmd.Flags().BoolVar(&once, "once", false, "exit after initial convergence (CI/Packer mode)")
 	serveCmd.Flags().IntVar(&maxRetries, "max-retries", 3, "max retries before marking a resource noncompliant")
 	rootCmd.AddCommand(serveCmd)
+}
+
+func isRoot() bool {
+	if runtime.GOOS == "windows" {
+		f, err := os.Open("\\\\.\\PHYSICALDRIVE0")
+		if err != nil {
+			return false
+		}
+		f.Close()
+		return true
+	}
+	return os.Geteuid() == 0
 }
