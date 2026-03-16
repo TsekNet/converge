@@ -5,6 +5,8 @@ package dsl
 import (
 	"os"
 	"time"
+
+	"github.com/TsekNet/converge/extensions"
 )
 
 // Blueprint is a function that declares desired system state.
@@ -28,11 +30,12 @@ const (
 type ResourceMeta struct {
 	DependsOn []string
 	Critical  bool
-	Noop      bool    // skip Apply, only Check (per-resource dry-run)
-	Retry     int     // per-resource max retries (0 = use daemon default)
-	Limit     float64 // per-resource rate limit (0 = use daemon default)
-	AutoEdge  *bool   // nil = enabled (default), false = disable auto-edges for this resource
-	AutoGroup *bool   // nil = enabled (default), false = disable auto-grouping for this resource
+	Noop      bool                 // skip Apply, only Check (per-resource dry-run)
+	Retry     int                  // per-resource max retries (0 = use daemon default)
+	Limit     float64              // per-resource rate limit (0 = use daemon default)
+	AutoEdge  *bool                // nil = enabled (default), false = disable auto-edges for this resource
+	AutoGroup *bool                // nil = enabled (default), false = disable auto-grouping for this resource
+	Condition extensions.Condition // nil = no gate; non-nil = skip until condition is met
 }
 
 type FileOpts struct {

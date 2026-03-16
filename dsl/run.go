@@ -16,6 +16,7 @@ func toNodeMeta(m ResourceMeta) graph.NodeMeta {
 		Limit:     m.Limit,
 		AutoEdge:  m.AutoEdge,
 		AutoGroup: m.AutoGroup,
+		Condition: m.Condition,
 	}
 }
 

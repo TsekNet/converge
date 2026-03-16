@@ -40,13 +40,14 @@ type Options struct {
 
 // Daemon watches resources for drift and re-converges them.
 type Daemon struct {
-	graph      *graph.Graph
-	printer    output.Printer
-	opts       Options
-	retries    *retryManager
-	initErr    error      // error from initial convergence
-	processing sync.Map   // tracks in-progress resource IDs
-	lastChange atomic.Int64 // unix nano timestamp of last Apply that changed something
+	graph         *graph.Graph
+	printer       output.Printer
+	opts          Options
+	retries       *retryManager
+	initErr       error         // error from initial convergence
+	processing    sync.Map      // tracks in-progress resource IDs
+	conditionsMet sync.Map      // resourceID -> bool; true once condition is satisfied
+	lastChange    atomic.Int64  // unix nano timestamp of last Apply that changed something
 }
 
 // New creates a daemon for the given resource graph.
@@ -65,14 +66,23 @@ func New(g *graph.Graph, printer output.Printer, opts Options) *Daemon {
 	}
 
 	rm := newRetryManager(opts.MaxRetries, opts.RetryBaseDelay)
+	d := &Daemon{graph: g, printer: printer, opts: opts, retries: rm}
+
 	for _, node := range g.Nodes() {
-		rm.register(node.Ext.ID())
+		id := node.Ext.ID()
+		rm.register(id)
 		if node.Meta.Retry > 0 {
-			rm.setRetryOverride(node.Ext.ID(), node.Meta.Retry)
+			rm.setRetryOverride(id, node.Meta.Retry)
+		}
+		// Pre-populate conditionsMet: true for resources without a condition.
+		if node.Meta.Condition == nil {
+			d.conditionsMet.Store(id, true)
+		} else {
+			d.conditionsMet.Store(id, false)
 		}
 	}
 
-	return &Daemon{graph: g, printer: printer, opts: opts, retries: rm}
+	return d
 }
 
 // Status returns the current compliance state of a resource.
@@ -162,11 +172,44 @@ func (d *Daemon) Run(ctx context.Context) error {
 }
 
 // startWatchers launches a goroutine per resource for Watch or poll.
+// Resources with a Condition gate get an additional goroutine that waits for
+// the condition to be met before the resource is eligible for convergence.
 func (d *Daemon) startWatchers(ctx context.Context, eventCh chan extensions.Event) *sync.WaitGroup {
 	var wg sync.WaitGroup
 
 	for _, node := range d.graph.Nodes() {
 		ext := node.Ext
+		cond := node.Meta.Condition
+
+		// Condition watcher: blocks until condition is met, then marks the
+		// resource eligible and injects an EventCondition to trigger convergence.
+		if cond != nil {
+			if met, _ := cond.Met(ctx); met {
+				d.conditionsMet.Store(ext.ID(), true)
+			} else {
+				wg.Add(1)
+				go func(ext extensions.Extension, cond extensions.Condition) {
+					defer wg.Done()
+					deck.Infof("waiting for condition: %s (%s)", ext.ID(), cond)
+					if err := cond.Wait(ctx); err != nil {
+						// ctx cancelled or fatal error; do not mark met.
+						return
+					}
+					d.conditionsMet.Store(ext.ID(), true)
+					deck.Infof("condition met: %s (%s)", ext.ID(), cond)
+					select {
+					case eventCh <- extensions.Event{
+						ResourceID: ext.ID(),
+						Kind:       extensions.EventCondition,
+						Detail:     "condition met: " + cond.String(),
+						Time:       time.Now(),
+					}:
+					default:
+					}
+				}(ext, cond)
+			}
+		}
+
 		wg.Add(1)
 
 		if w, ok := ext.(extensions.Watcher); ok {
@@ -265,6 +308,11 @@ func (d *Daemon) processLoop(ctx context.Context, coalescedIDs, retryIDs <-chan 
 func (d *Daemon) handleResourceEvent(ctx context.Context, id string, eventMeta *sync.Map, rl *resourceRateLimiter, rawEvents chan extensions.Event) {
 	node := d.graph.Node(id)
 	if node == nil {
+		return
+	}
+
+	// Gate: skip if the resource's condition has not yet been satisfied.
+	if met, ok := d.conditionsMet.Load(id); !ok || !met.(bool) {
 		return
 	}
 

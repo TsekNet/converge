@@ -930,3 +930,75 @@ func Blueprint(r *dsl.Run) {
 **Fail-closed:** If the key is missing or decryption fails, `Secret` returns an empty string (never leaks ciphertext).
 
 **No external deps:** Uses Go stdlib `crypto/aes` + `crypto/cipher` (AES-256-GCM with random nonces).
+
+---
+
+## Conditions
+
+Conditions gate resource convergence on system state. The daemon skips the resource until the condition is true, then triggers convergence. Ongoing drift detection continues normally after the condition is first satisfied.
+
+```go
+import "github.com/TsekNet/converge/condition"
+```
+
+### NetworkInterface: VPN-gated firewall rules
+
+```go
+p.Firewall("allow-internal", firewall.Opts{
+    Port: 8443, Protocol: "tcp", Action: "allow",
+    Meta: dsl.ResourceMeta{
+        // Only apply when tun0 (VPN) interface is up.
+        Condition: condition.NetworkInterface("tun0"),
+    },
+})
+```
+
+### MountPoint: NFS-backed service
+
+```go
+p.File("/mnt/nfs/config/app.conf", file.Opts{Content: appConfig})
+p.Service("app", service.Opts{
+    State: dsl.Running,
+    Meta: dsl.ResourceMeta{
+        // Wait for NFS mount before managing the service.
+        Condition: condition.MountPoint("/mnt/nfs"),
+        DependsOn: []string{"file:/mnt/nfs/config/app.conf"},
+    },
+})
+```
+
+### FileExists: cert enrollment after bootstrap
+
+```go
+p.Exec("enroll-cert", exec.Opts{
+    Command: "/usr/local/bin/enroll",
+    Meta: dsl.ResourceMeta{
+        // Wait for the CA bundle to be placed by provisioning.
+        Condition: condition.FileExists("/etc/ssl/ca-bundle.crt"),
+    },
+})
+```
+
+### NetworkReachable: proxy config before package installs
+
+```go
+p.File("/etc/apt/apt.conf.d/99proxy", file.Opts{Content: proxyConf})
+p.Package("curl", pkg.Opts{
+    State: dsl.Present,
+    Meta: dsl.ResourceMeta{
+        // Only install packages once the proxy is reachable.
+        Condition: condition.NetworkReachable("proxy.corp.example.com", 3128),
+        DependsOn: []string{"file:/etc/apt/apt.conf.d/99proxy"},
+    },
+})
+```
+
+### Available conditions
+
+| Constructor | Satisfied when | Wait mechanism |
+|---|---|---|
+| `condition.NetworkInterface(name)` | Named interface exists and is up | netlink RTMGRP_LINK (Linux), NotifyIpInterfaceChange (Windows), 2s poll (macOS) |
+| `condition.NetworkReachable(host, port)` | TCP connect to host:port succeeds | 5s poll (no kernel event for TCP reachability) |
+| `condition.MountPoint(path)` | path is on a different device than its parent | inotify on /proc/self/mountinfo (Linux), kqueue on / (macOS), 5s poll (Windows) |
+| `condition.FileExists(path)` | os.Stat(path) succeeds | inotify on parent dir (Linux), kqueue on parent (macOS), ReadDirectoryChangesW (Windows) |
+

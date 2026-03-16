@@ -69,6 +69,7 @@ Extensions implementing neither fall back to the daemon's default poll interval 
 | `EventWatch` | `0` | OS-level watcher detected a change |
 | `EventPoll` | `1` | Periodic poll detected drift |
 | `EventRetry` | `2` | Scheduled retry after a previous failure |
+| `EventCondition` | `3` | A condition gate became true, triggering initial convergence |
 
 ---
 

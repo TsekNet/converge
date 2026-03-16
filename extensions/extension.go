@@ -32,13 +32,32 @@ type Poller interface {
 	PollInterval() time.Duration
 }
 
+// Condition is optionally set on ResourceMeta to gate convergence on system
+// state. The daemon skips the resource until Met returns true, then triggers
+// initial convergence. Conditions do not affect ongoing drift detection after
+// they are first satisfied.
+//
+// Implementations must use OS-native APIs (netlink, inotify, Win32, etc.).
+// Wait must block using kernel events, not a polling loop, unless no kernel
+// API exists for the condition type (documented per implementation).
+type Condition interface {
+	// Met returns true if the condition is currently satisfied.
+	Met(ctx context.Context) (bool, error)
+	// Wait blocks until the condition becomes true, ctx is cancelled,
+	// or a fatal error occurs. Returns nil when the condition is met.
+	Wait(ctx context.Context) error
+	// String returns a human-readable description for logging.
+	String() string
+}
+
 // EventKind classifies how an event was generated.
 type EventKind int
 
 const (
-	EventWatch EventKind = iota // OS-level watcher detected change
-	EventPoll                   // periodic poll detected drift
-	EventRetry                  // scheduled retry after failure
+	EventWatch     EventKind = iota // OS-level watcher detected change
+	EventPoll                       // periodic poll detected drift
+	EventRetry                      // scheduled retry after failure
+	EventCondition                  // condition became true, triggering initial convergence
 )
 
 func (k EventKind) String() string {
@@ -49,6 +68,8 @@ func (k EventKind) String() string {
 		return "poll"
 	case EventRetry:
 		return "retry"
+	case EventCondition:
+		return "condition"
 	default:
 		return "unknown"
 	}
