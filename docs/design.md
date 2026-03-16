@@ -252,7 +252,7 @@ When no events are firing, the daemon idles at near-zero CPU. There is no 30-min
 flowchart TD
     A[converge serve blueprint] --> B[Build DAG + auto-edges]
     B --> C[Initial convergence<br/>topological order]
-    C --> D{--once?}
+    C --> D{--timeout?}
     D -->|yes| E[Exit]
     D -->|no| F[Start per-resource watchers]
     F --> G[Event loop]

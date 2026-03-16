@@ -15,7 +15,6 @@ import (
 )
 
 var (
-	once             bool
 	maxRetries       int
 	convergedTimeout time.Duration
 )
@@ -23,8 +22,14 @@ var (
 var serveCmd = &cobra.Command{
 	Use:   "serve [blueprint]",
 	Short: "Run as a persistent service, re-converging on drift",
-	Long:  "Run as a persistent daemon that monitors all resources for state drift and re-converges immediately. Use --once to exit after initial convergence.",
-	Args:  cobra.ExactArgs(1),
+	Long: `Run as a persistent daemon that monitors all resources for state drift
+and re-converges immediately.
+
+Use --timeout to exit after the system has been stable for a given duration:
+  converge serve baseline --timeout 1s   # converge once, exit after 1s stable
+  converge serve baseline --timeout 60s  # exit after 60s with no changes
+  converge serve baseline                # run forever (default)`,
+	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		if !platform.IsRoot() {
 			exitWithError(exit.NotRoot, fmt.Errorf("converge serve requires root/administrator privileges"))
@@ -42,7 +47,6 @@ var serveCmd = &cobra.Command{
 		opts := daemon.Options{
 			Timeout:          timeout,
 			Parallel:         parallel,
-			Once:             once,
 			MaxRetries:       maxRetries,
 			ConvergedTimeout: convergedTimeout,
 		}
@@ -59,9 +63,7 @@ var serveCmd = &cobra.Command{
 }
 
 func init() {
-	serveCmd.Flags().BoolVar(&once, "once", false, "exit after initial convergence (CI/Packer mode)")
 	serveCmd.Flags().IntVar(&maxRetries, "max-retries", 3, "max retries before marking a resource noncompliant")
 	serveCmd.Flags().DurationVar(&convergedTimeout, "timeout", 0, "exit after system is stable for this duration (0 = run forever)")
 	rootCmd.AddCommand(serveCmd)
 }
-

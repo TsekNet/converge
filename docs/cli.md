@@ -18,7 +18,6 @@ Builds a DAG of all resources, performs initial convergence, then starts per-res
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--once` | `false` | Exit after initial convergence (CI/Packer mode) |
 | `--max-retries` | `3` | Max retries before marking a resource noncompliant |
 | `--timeout` | `0` | Exit after system is stable for this duration (e.g. `60s`). 0 = run forever. |
 
@@ -175,7 +174,7 @@ converge plan baseline
 sudo converge serve baseline
 
 # Converge once and exit (CI/Packer)
-sudo converge serve baseline --once
+sudo converge serve baseline --timeout 1s
 
 # JSON output for CI scripting
 converge plan baseline --out=json | jq '.resources[] | select(.status == "pending")'
@@ -191,5 +190,5 @@ converge list -b
 
 # CIS hardening
 converge plan cis
-sudo converge serve cis --once
+sudo converge serve cis --timeout 1s
 ```

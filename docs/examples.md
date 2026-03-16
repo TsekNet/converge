@@ -121,7 +121,7 @@ func main() {
 ```bash
 converge plan myblueprint              # dry-run, show what would change
 sudo converge serve myblueprint        # run as persistent daemon
-sudo converge serve myblueprint --once # converge once and exit
+sudo converge serve myblueprint --timeout 1s # converge and exit
 ```
 
 You can register as many blueprints as you want. Each becomes a subcommand target.
@@ -230,10 +230,10 @@ For CI/CD or image baking (Packer), use `--once` to converge and exit:
 
 ```bash
 # CI pipeline
-sudo converge serve baseline --once --detailed-exit-codes
+sudo converge serve baseline --timeout 1s --detailed-exit-codes
 
 # Packer provisioner
-sudo converge serve cis --once
+sudo converge serve cis --timeout 1s
 
 # Packer: converge and exit after 60s of stability
 sudo converge serve baseline --timeout 60s

@@ -30,7 +30,6 @@ const (
 type Options struct {
 	Timeout          time.Duration // per-resource timeout
 	Parallel         int           // max concurrent resources during initial convergence
-	Once             bool          // exit after initial convergence
 	DefaultPollFreq  time.Duration // poll interval for resources without Watcher or Poller
 	MaxRetries       int           // max retries before marking noncompliant (0 = use default)
 	RetryBaseDelay   time.Duration // base delay for exponential backoff (0 = use default)
@@ -81,7 +80,7 @@ func (d *Daemon) Status(id string) ResourceStatus {
 }
 
 // Run performs initial convergence, then watches all resources until ctx
-// is cancelled. In Once mode, it returns after initial convergence.
+// is cancelled or --timeout stability window is reached.
 func (d *Daemon) Run(ctx context.Context) error {
 	// Phase 1: initial convergence pass.
 	engineOpts := engine.Options{
@@ -92,10 +91,6 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if err != nil {
 		deck.Errorf("initial convergence failed (exit %d): %v", code, err)
 		d.initErr = err
-	}
-
-	if d.opts.Once {
-		return err
 	}
 
 	// Phase 2: start watchers/pollers feeding raw events.

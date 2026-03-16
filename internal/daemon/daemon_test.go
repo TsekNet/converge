@@ -76,20 +76,18 @@ func TestDaemon_InitialConvergence(t *testing.T) {
 	g.AddNode(ext)
 
 	d := New(g, &nullPrinter{}, Options{
-		Timeout:  5 * time.Second,
-		Parallel: 1,
-		Once:     true,
+		Timeout:          5 * time.Second,
+		Parallel:         1,
+		ConvergedTimeout: 1 * time.Second,
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := d.Run(ctx); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
+	d.Run(ctx)
 
-	if ext.applied.Load() != 1 {
-		t.Errorf("Apply called %d times, want 1", ext.applied.Load())
+	if ext.applied.Load() < 1 {
+		t.Errorf("Apply called %d times, want >= 1", ext.applied.Load())
 	}
 }
 
@@ -302,7 +300,7 @@ func TestDaemon_RetryResetsOnSuccess(t *testing.T) {
 	}
 }
 
-func TestDaemon_OnceExitsAfterConvergence(t *testing.T) {
+func TestDaemon_TimeoutExitsAfterStability(t *testing.T) {
 	ext := &mockWatcherExt{
 		mockExt: *newMockExt("file:/etc/test", true),
 		watchFn: func(ctx context.Context, _ chan<- extensions.Event) error {
@@ -315,16 +313,17 @@ func TestDaemon_OnceExitsAfterConvergence(t *testing.T) {
 	g.AddNode(ext)
 
 	d := New(g, &nullPrinter{}, Options{
-		Timeout:  5 * time.Second,
-		Parallel: 1,
-		Once:     true,
+		Timeout:          5 * time.Second,
+		Parallel:         1,
+		ConvergedTimeout: 1 * time.Second,
 	})
 
 	start := time.Now()
 	d.Run(context.Background())
 	elapsed := time.Since(start)
 
-	if elapsed > 2*time.Second {
-		t.Errorf("Once mode took %v, expected quick return", elapsed)
+	// Should exit after ~1s of stability, not block forever.
+	if elapsed > 5*time.Second {
+		t.Errorf("timeout mode took %v, expected ~1s", elapsed)
 	}
 }

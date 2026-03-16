@@ -57,7 +57,7 @@ func Baseline(r *dsl.Run) {
 ```bash
 converge plan baseline               # dry-run, no root needed
 sudo converge serve baseline         # run as persistent daemon, re-converge on drift
-sudo converge serve baseline --once  # converge once and exit (CI/Packer)
+sudo converge serve baseline --timeout 1s  # converge and exit (CI/Packer)
 ```
 
 **3. Flags:**
