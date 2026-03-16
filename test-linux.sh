@@ -1,7 +1,8 @@
 #!/bin/bash
 # Linux integration test suite for converge. Run as root:
 #   sudo bash test-linux.sh
-set -euo pipefail
+set -uo pipefail
+# No set -e: we handle errors per-test, don't abort on first failure.
 
 BIN="./converge"
 PASS=0
