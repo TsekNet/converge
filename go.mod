@@ -3,10 +3,13 @@ module github.com/TsekNet/converge
 go 1.26.0
 
 require (
+	github.com/go-ole/go-ole v1.3.0
+	github.com/godbus/dbus/v5 v5.2.2
 	github.com/google/deck v1.1.0
 	github.com/google/nftables v0.3.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/sys v0.42.0
+	golang.org/x/time v0.15.0
 	howett.net/plist v1.0.1
 )
 

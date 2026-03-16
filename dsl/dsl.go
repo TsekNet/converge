@@ -24,25 +24,36 @@ const (
 	Stopped ServiceState = "stopped"
 )
 
+// ResourceMeta holds common metadata shared by all Opts structs.
+type ResourceMeta struct {
+	DependsOn []string
+	Critical  bool
+	Noop      bool    // skip Apply, only Check (per-resource dry-run)
+	Retry     int     // per-resource max retries (0 = use daemon default)
+	Limit     float64 // per-resource rate limit (0 = use daemon default)
+	AutoEdge  *bool   // nil = enabled (default), false = disable auto-edges for this resource
+	AutoGroup *bool   // nil = enabled (default), false = disable auto-grouping for this resource
+}
+
 type FileOpts struct {
-	Content  string
-	Mode     os.FileMode
-	Owner    string
-	Group    string
-	Append   bool
-	Critical bool
+	Content string
+	Mode    os.FileMode
+	Owner   string
+	Group   string
+	Append  bool
+	Meta    ResourceMeta
 }
 
 type PackageOpts struct {
-	State    ResourceState
-	Critical bool
+	State ResourceState
+	Meta  ResourceMeta
 }
 
 type ServiceOpts struct {
 	State       ServiceState
 	Enable      bool
 	StartupType string // "auto", "delayed-auto", "manual", "disabled" (Windows SCM)
-	Critical    bool
+	Meta        ResourceMeta
 }
 
 type ExecOpts struct {
@@ -53,51 +64,51 @@ type ExecOpts struct {
 	Env        []string
 	Retries    int
 	RetryDelay time.Duration
-	Critical   bool
+	Meta       ResourceMeta
 }
 
 type UserOpts struct {
-	Groups   []string
-	Shell    string
-	Home     string
-	System   bool
-	Critical bool
+	Groups []string
+	Shell  string
+	Home   string
+	System bool
+	Meta   ResourceMeta
 }
 
 type RegistryOpts struct {
-	Value    string
-	Type     string
-	Data     any
-	State    ResourceState // Present (default) or Absent
-	Critical bool
+	Value string
+	Type  string
+	Data  any
+	State ResourceState // Present (default) or Absent
+	Meta  ResourceMeta
 }
 
 type SecurityPolicyOpts struct {
 	Category string // "password" or "lockout"
 	Key      string
 	Value    string
-	Critical bool
+	Meta     ResourceMeta
 }
 
 type AuditPolicyOpts struct {
 	Subcategory string
 	Success     bool
 	Failure     bool
-	Critical    bool
+	Meta        ResourceMeta
 }
 
 type SysctlOpts struct {
-	Value    string
-	Persist  bool
-	Critical bool
+	Value   string
+	Persist bool
+	Meta    ResourceMeta
 }
 
 type PlistOpts struct {
-	Key      string
-	Value    any
-	Type     string // "bool", "int", "float", "string"
-	Host     bool   // true = /Library/Preferences (system-wide), false = ~/Library/Preferences
-	Critical bool
+	Key   string
+	Value any
+	Type  string // "bool", "int", "float", "string"
+	Host  bool   // true = /Library/Preferences (system-wide), false = ~/Library/Preferences
+	Meta  ResourceMeta
 }
 
 type FirewallOpts struct {
@@ -108,5 +119,5 @@ type FirewallOpts struct {
 	Source    string // Optional source address/CIDR
 	Dest      string // Optional destination address/CIDR
 	State     ResourceState
-	Critical  bool
+	Meta      ResourceMeta
 }

@@ -33,7 +33,7 @@ func (p *SerialPrinter) BlueprintHeader(name string) {
 func (p *SerialPrinter) ResourceChecking(ext extensions.Extension, current, total int) {
 	resType, resName := splitResource(ext.String())
 	p.printGroupHeader(resType)
-	fmt.Printf("    ... %s [%d/%d]\n", resName, current, total)
+	fmt.Printf("  ... %s [%d/%d]\n", resName, current, total)
 }
 
 func (p *SerialPrinter) printGroupHeader(resType string) {
@@ -47,10 +47,10 @@ func (p *SerialPrinter) PlanResult(ext extensions.Extension, state *extensions.S
 	_, resName := splitResource(ext.String())
 
 	if state.InSync {
-		fmt.Printf("    + %s\n", resName)
+		fmt.Printf("  + %s\n", resName)
 		return
 	}
-	fmt.Printf("    ~ %s\n", resName)
+	fmt.Printf("  ~ %s\n", resName)
 	for _, c := range state.Changes {
 		sym := "~"
 		if c.Action == "add" {
@@ -59,9 +59,9 @@ func (p *SerialPrinter) PlanResult(ext extensions.Extension, state *extensions.S
 			sym = "-"
 		}
 		if c.From != "" && c.To != "" {
-			fmt.Printf("          %s %s: %s -> %s\n", sym, c.Property, c.From, c.To)
+			fmt.Printf("      %s %s: %s -> %s\n", sym, c.Property, c.From, c.To)
 		} else {
-			fmt.Printf("          %s %s: %s\n", sym, c.Property, c.To)
+			fmt.Printf("      %s %s: %s\n", sym, c.Property, c.To)
 		}
 	}
 }
@@ -75,14 +75,32 @@ func (p *SerialPrinter) ApplyResult(ext extensions.Extension, result *extensions
 	dots := p.dots(resName)
 
 	if result.Status == extensions.StatusFailed {
-		fmt.Printf("    - %s%s%s\n", resName, dots, dur)
+		fmt.Printf("  - %s%s%s\n", resName, dots, dur)
 		if result.Err != nil {
-			fmt.Printf("      Error: %s\n", result.Err.Error())
+			fmt.Printf("    Error: %s\n", result.Err.Error())
 		}
 		return
 	}
 
-	fmt.Printf("    + %s%s%s\n", resName, dots, dur)
+	if result.Changed && len(result.Changes) > 0 {
+		fmt.Printf("  ~ %s%s%s\n", resName, dots, dur)
+		for _, c := range result.Changes {
+			sym := "~"
+			if c.Action == "add" {
+				sym = "+"
+			} else if c.Action == "remove" {
+				sym = "-"
+			}
+			if c.From != "" && c.To != "" {
+				fmt.Printf("      %s %s: %s -> %s\n", sym, c.Property, c.From, c.To)
+			} else if c.To != "" {
+				fmt.Printf("      %s %s: %s\n", sym, c.Property, c.To)
+			}
+		}
+		return
+	}
+
+	fmt.Printf("  + %s%s%s\n", resName, dots, dur)
 }
 
 func (p *SerialPrinter) dots(name string) string {
@@ -96,22 +114,36 @@ func (p *SerialPrinter) dots(name string) string {
 func (p *SerialPrinter) Summary(changed, ok, failed, total int, durationMs int64) {
 	dur := formatDuration(time.Duration(durationMs) * time.Millisecond)
 	fmt.Println("------------------------------------------")
+
+	var parts []string
 	if failed > 0 {
-		fmt.Printf("  APPLY  %d error  %d changed  %d ok  %d total (%s)\n", failed, changed, ok, total, dur)
-	} else if changed == 0 {
-		fmt.Printf("  APPLY  %d ok (%s)\n", ok, dur)
-	} else {
-		fmt.Printf("  APPLY  %d changed  %d ok  %d total (%s)\n", changed, ok, total, dur)
+		parts = append(parts, fmt.Sprintf("%d error", failed))
 	}
+	if changed > 0 {
+		parts = append(parts, fmt.Sprintf("%d changed", changed))
+	}
+	if ok > 0 {
+		parts = append(parts, fmt.Sprintf("%d ok", ok))
+	}
+
+	fmt.Printf("  APPLY  %s  (%s)\n", strings.Join(parts, "  "), dur)
 }
 
 func (p *SerialPrinter) PlanSummary(pending, ok, total int) {
 	fmt.Println("------------------------------------------")
-	fmt.Printf("  PLAN  %d to change  %d ok  %d total\n", pending, ok, total)
+
+	var parts []string
+	if pending > 0 {
+		parts = append(parts, fmt.Sprintf("%d to change", pending))
+	}
+	if ok > 0 {
+		parts = append(parts, fmt.Sprintf("%d ok", ok))
+	}
+
+	fmt.Printf("  PLAN  %s\n", strings.Join(parts, "  "))
 }
 
 func (p *SerialPrinter) Error(ext extensions.Extension, err error) {
 	_, resName := splitResource(ext.String())
-	fmt.Printf("    - %s: %s\n", resName, err.Error())
+	fmt.Printf("  - %s: %s\n", resName, err.Error())
 }
-

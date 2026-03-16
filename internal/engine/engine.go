@@ -7,30 +7,21 @@ import (
 	"time"
 
 	"github.com/TsekNet/converge/extensions"
+	"github.com/TsekNet/converge/internal/exit"
+	"github.com/TsekNet/converge/internal/graph"
 	"github.com/TsekNet/converge/internal/output"
 	"github.com/google/deck"
 )
 
 // Options controls engine execution behaviour.
 type Options struct {
-	Timeout  time.Duration // per-resource timeout (0 = no timeout)
-	Parallel int           // max concurrent resources (<=1 = sequential)
+	Timeout         time.Duration // per-resource timeout (0 = no timeout)
+	Parallel        int           // max concurrent resources (<=1 = sequential)
+	SuppressSummary bool          // skip the summary line (daemon mode prints its own)
 }
 
 func DefaultOptions() Options {
 	return Options{Timeout: 5 * time.Minute, Parallel: 1}
-}
-
-// CheckDuplicates detects resources with the same ID declared in a blueprint.
-func CheckDuplicates(resources []extensions.Extension) error {
-	seen := make(map[string]bool, len(resources))
-	for _, r := range resources {
-		if seen[r.ID()] {
-			return fmt.Errorf("duplicate resource: %s", r.ID())
-		}
-		seen[r.ID()] = true
-	}
-	return nil
 }
 
 func withTimeout(parent context.Context, d time.Duration) (context.Context, context.CancelFunc) {
@@ -59,7 +50,7 @@ func RunPlan(resources []extensions.Extension, printer output.Printer, opts Opti
 
 		if err != nil {
 			printer.Error(r, err)
-			return 1, fmt.Errorf("check failed for %s: %w", r.ID(), err)
+			return exit.Error, fmt.Errorf("check failed for %s: %w", r.ID(), err)
 		}
 		if state == nil {
 			state = &extensions.State{}
@@ -75,9 +66,9 @@ func RunPlan(resources []extensions.Extension, printer output.Printer, opts Opti
 
 	printer.PlanSummary(pending, ok, len(resources))
 	if pending > 0 {
-		return 5, nil
+		return exit.Pending, nil
 	}
-	return 0, nil
+	return exit.OK, nil
 }
 
 type applyResult struct {
@@ -89,7 +80,7 @@ func (ar applyResult) failed() bool {
 	return ar.result.Status == extensions.StatusFailed
 }
 
-func applyOne(ctx context.Context, r extensions.Extension, timeout time.Duration) applyResult {
+func applyOne(ctx context.Context, r extensions.Extension, timeout time.Duration, noop bool) applyResult {
 	start := time.Now()
 
 	rctx, cancel := withTimeout(ctx, timeout)
@@ -108,13 +99,24 @@ func applyOne(ctx context.Context, r extensions.Extension, timeout time.Duration
 		return applyResult{r, &extensions.Result{Status: extensions.StatusOK}}
 	}
 
+	// Per-resource noop: report drift but skip Apply.
+	if noop {
+		return applyResult{r, &extensions.Result{
+			Status:   extensions.StatusOK,
+			Message:  "noop: drift detected, apply skipped",
+			Duration: time.Since(start),
+		}}
+	}
+
+	changes := state.Changes
+
 	rctx, cancel = withTimeout(ctx, timeout)
 	result, err := r.Apply(rctx)
 	cancel()
 
 	if err != nil {
 		return applyResult{r, &extensions.Result{
-			Status: extensions.StatusFailed, Err: err, Duration: time.Since(start),
+			Status: extensions.StatusFailed, Err: err, Duration: time.Since(start), Changes: changes,
 		}}
 	}
 	if result == nil {
@@ -123,72 +125,8 @@ func applyOne(ctx context.Context, r extensions.Extension, timeout time.Duration
 		}}
 	}
 	result.Duration = time.Since(start)
+	result.Changes = changes
 	return applyResult{r, result}
-}
-
-// RunApply checks and applies changes for all resources.
-func RunApply(resources []extensions.Extension, printer output.Printer, opts Options) (int, error) {
-	ctx := context.Background()
-	start := time.Now()
-	changed, ok, failed := 0, 0, 0
-
-	setMaxNameLen(resources, printer)
-
-	results := make([]applyResult, len(resources))
-
-	if opts.Parallel > 1 {
-		sem := make(chan struct{}, opts.Parallel)
-		var wg sync.WaitGroup
-		for i, r := range resources {
-			wg.Add(1)
-			sem <- struct{}{}
-			go func(idx int, res extensions.Extension) {
-				defer wg.Done()
-				defer func() { <-sem }()
-				results[idx] = applyOne(ctx, res, opts.Timeout)
-			}(i, r)
-		}
-		wg.Wait()
-	} else {
-		for i, r := range resources {
-			results[i] = applyOne(ctx, r, opts.Timeout)
-		}
-	}
-
-	for i, ar := range results {
-		printer.ApplyStart(ar.ext, i+1, len(resources))
-		printer.ApplyResult(ar.ext, ar.result)
-
-		switch ar.result.Status {
-		case extensions.StatusOK:
-			ok++
-		case extensions.StatusChanged:
-			changed++
-		default:
-			failed++
-			if isCritical(ar.ext) {
-				deck.Errorf("critical resource failed: %s", ar.ext.ID())
-				printer.Summary(changed, ok, failed, changed+ok+failed, time.Since(start).Milliseconds())
-				return 3, fmt.Errorf("critical resource %s failed", ar.ext.ID())
-			}
-		}
-	}
-
-	total := changed + ok + failed
-	printer.Summary(changed, ok, failed, total, time.Since(start).Milliseconds())
-
-	switch {
-	case total == 0:
-		return 0, nil
-	case failed == total:
-		return 4, nil
-	case failed > 0:
-		return 3, nil
-	case changed > 0:
-		return 2, nil
-	default:
-		return 0, nil
-	}
 }
 
 type nameAware interface {
@@ -204,5 +142,113 @@ func setMaxNameLen(resources []extensions.Extension, printer output.Printer) {
 			}
 		}
 		p.SetMaxNameLen(maxLen)
+	}
+}
+
+// RunPlanDAG checks all resources in topological order without applying changes.
+func RunPlanDAG(g *graph.Graph, printer output.Printer, opts Options) (int, error) {
+	all, err := g.Flatten()
+	if err != nil {
+		return exit.Error, fmt.Errorf("building execution order: %w", err)
+	}
+	return RunPlan(all, printer, opts)
+}
+
+// RunApplyDAG checks and applies changes in topological layer order.
+// Resources within the same layer run concurrently up to opts.Parallel.
+// Dependencies in earlier layers complete before later layers start.
+// Package resources in the same layer with the same manager and state
+// are auto-grouped into a single batch install/remove invocation.
+func RunApplyDAG(g *graph.Graph, printer output.Printer, opts Options) (int, error) {
+	nodeLayers, err := g.TopologicalNodeLayers()
+	if err != nil {
+		return exit.Error, fmt.Errorf("building execution order: %w", err)
+	}
+
+	all, _ := g.Flatten()
+
+	// Build a noop lookup from node meta.
+	noopSet := make(map[string]bool)
+	for _, node := range g.Nodes() {
+		if node.Meta.Noop {
+			noopSet[node.Ext.ID()] = true
+		}
+	}
+
+	ctx := context.Background()
+	start := time.Now()
+	changed, ok, failed := 0, 0, 0
+	idx := 0
+
+	setMaxNameLen(all, printer)
+
+	for _, nodeLayer := range nodeLayers {
+		layer := autoGroupLayer(nodeLayer)
+		results := make([]applyResult, len(layer))
+
+		if opts.Parallel > 1 && len(layer) > 1 {
+			// Parallel: run all, print after layer completes.
+			sem := make(chan struct{}, opts.Parallel)
+			var wg sync.WaitGroup
+			for i, r := range layer {
+				wg.Add(1)
+				sem <- struct{}{}
+				go func(j int, res extensions.Extension) {
+					defer wg.Done()
+					defer func() { <-sem }()
+					results[j] = applyOne(ctx, res, opts.Timeout, noopSet[res.ID()])
+				}(i, r)
+			}
+			wg.Wait()
+			for _, ar := range results {
+				idx++
+				printer.ApplyStart(ar.ext, idx, len(all))
+				printer.ApplyResult(ar.ext, ar.result)
+			}
+		} else {
+			// Sequential: stream output as each resource completes.
+			for i, r := range layer {
+				idx++
+				printer.ApplyStart(r, idx, len(all))
+				results[i] = applyOne(ctx, r, opts.Timeout, noopSet[r.ID()])
+				printer.ApplyResult(r, results[i].result)
+			}
+		}
+
+		for _, ar := range results {
+			switch ar.result.Status {
+			case extensions.StatusOK:
+				ok++
+			case extensions.StatusChanged:
+				changed++
+			default:
+				failed++
+				if isCritical(ar.ext) {
+					deck.Errorf("critical resource failed: %s", ar.ext.ID())
+					if !opts.SuppressSummary {
+						printer.Summary(changed, ok, failed, changed+ok+failed, time.Since(start).Milliseconds())
+					}
+					return exit.PartialFail, fmt.Errorf("critical resource %s failed", ar.ext.ID())
+				}
+			}
+		}
+	}
+
+	total := changed + ok + failed
+	if !opts.SuppressSummary {
+		printer.Summary(changed, ok, failed, total, time.Since(start).Milliseconds())
+	}
+
+	switch {
+	case total == 0:
+		return exit.OK, nil
+	case failed == total:
+		return exit.AllFailed, nil
+	case failed > 0:
+		return exit.PartialFail, nil
+	case changed > 0:
+		return exit.Changed, nil
+	default:
+		return exit.OK, nil
 	}
 }

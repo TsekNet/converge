@@ -43,6 +43,7 @@ func (p *TerminalPrinter) Banner(version string) {
 
 func (p *TerminalPrinter) BlueprintHeader(name string) {
 	fmt.Printf(" %s·%s %s%s%s\n", colorDim, colorReset, colorBold, name, colorReset)
+	fmt.Printf("%s────────────────────────────────────────────%s\n", colorDim, colorReset)
 }
 
 func (p *TerminalPrinter) ResourceChecking(ext extensions.Extension, current, total int) {
@@ -115,6 +116,29 @@ func (p *TerminalPrinter) ApplyResult(ext extensions.Extension, result *extensio
 		return
 	}
 
+	if result.Changed && len(result.Changes) > 0 {
+		fmt.Printf("  %s~%s %s%s%s%s%s\n",
+			colorYellow, colorReset, resName, colorDim, dots, dur, colorReset)
+		for _, c := range result.Changes {
+			sym, clr := "~", colorYellow
+			if c.Action == "add" {
+				sym, clr = "+", colorGreen
+			} else if c.Action == "remove" {
+				sym, clr = "-", colorRed
+			}
+			if c.From != "" && c.To != "" {
+				fmt.Printf("      %s%s%s %s: %s%s%s → %s%s%s\n",
+					clr, sym, colorReset, c.Property,
+					colorRed, c.From, colorReset,
+					colorGreen, c.To, colorReset)
+			} else if c.To != "" {
+				fmt.Printf("      %s%s%s %s: %s%s%s\n",
+					clr, sym, colorReset, c.Property, clr, c.To, colorReset)
+			}
+		}
+		return
+	}
+
 	fmt.Printf("  %s✓%s %s%s%s%s%s\n",
 		colorGreen, colorReset, resName, colorDim, dots, dur, colorReset)
 }
@@ -122,25 +146,27 @@ func (p *TerminalPrinter) ApplyResult(ext extensions.Extension, result *extensio
 func (p *TerminalPrinter) Summary(changed, ok, failed, total int, durationMs int64) {
 	dur := formatDuration(time.Duration(durationMs) * time.Millisecond)
 	fmt.Printf("%s────────────────────────────────────────────%s\n", colorDim, colorReset)
+
+	symbol, symbolColor := "✓", colorGreen
 	if failed > 0 {
-		fmt.Printf("%s%s✗ APPLY%s  %s%d error%s  %s%d changed%s  %s%d ok%s  %s%d total (%s)%s\n",
-			colorBold, colorRed, colorReset,
-			colorRed, failed, colorReset,
-			colorYellow, changed, colorReset,
-			colorGreen, ok, colorReset,
-			colorDim, total, dur, colorReset)
-	} else if changed == 0 {
-		fmt.Printf("%s%s✓ APPLY%s  %s%d ok%s  %s(%s)%s\n",
-			colorBold, colorGreen, colorReset,
-			colorGreen, ok, colorReset,
-			colorDim, dur, colorReset)
-	} else {
-		fmt.Printf("%s%s✓ APPLY%s  %s%d changed%s  %s%d ok%s  %s%d total (%s)%s\n",
-			colorBold, colorGreen, colorReset,
-			colorYellow, changed, colorReset,
-			colorGreen, ok, colorReset,
-			colorDim, total, dur, colorReset)
+		symbol, symbolColor = "✗", colorRed
 	}
+
+	var parts []string
+	if failed > 0 {
+		parts = append(parts, fmt.Sprintf("%s%d error%s", colorRed, failed, colorReset))
+	}
+	if changed > 0 {
+		parts = append(parts, fmt.Sprintf("%s%d changed%s", colorYellow, changed, colorReset))
+	}
+	if ok > 0 {
+		parts = append(parts, fmt.Sprintf("%s%d ok%s", colorGreen, ok, colorReset))
+	}
+
+	fmt.Printf("%s%s%s APPLY%s  %s  %s(%s)%s\n",
+		colorBold, symbolColor, symbol, colorReset,
+		strings.Join(parts, "  "),
+		colorDim, dur, colorReset)
 	fmt.Println()
 }
 
@@ -151,12 +177,17 @@ func (p *TerminalPrinter) PlanSummary(pending, ok, total int) {
 			colorBold, colorGreen, colorReset,
 			colorGreen, ok, colorReset)
 	} else {
-		fmt.Printf("%s%s● PLAN%s  %s%d changed%s  %s%d ok%s  %s%d total%s\n",
+		var parts []string
+		if pending > 0 {
+			parts = append(parts, fmt.Sprintf("%s%d to change%s", colorYellow, pending, colorReset))
+		}
+		if ok > 0 {
+			parts = append(parts, fmt.Sprintf("%s%d ok%s", colorGreen, ok, colorReset))
+		}
+		fmt.Printf("%s%s● PLAN%s  %s\n",
 			colorBold, colorCyan, colorReset,
-			colorYellow, pending, colorReset,
-			colorGreen, ok, colorReset,
-			colorDim, total, colorReset)
-		fmt.Printf("%sRun %ssudo converge apply%s%s to apply.%s\n",
+			strings.Join(parts, "  "))
+		fmt.Printf("%sRun %sconverge serve --timeout 1s%s%s to apply.%s\n",
 			colorDim, colorWhite, colorReset, colorDim, colorReset)
 	}
 	fmt.Println()

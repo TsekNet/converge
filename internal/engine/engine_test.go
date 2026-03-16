@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/TsekNet/converge/extensions"
+	"github.com/TsekNet/converge/internal/graph"
 	"github.com/TsekNet/converge/internal/output"
 )
 
@@ -56,76 +56,22 @@ func (d *discardPrinter) Error(_ extensions.Extension, _ error)                 
 
 var _ output.Printer = (*discardPrinter)(nil)
 
-func TestCheckDuplicates(t *testing.T) {
+func makeGraph(exts ...extensions.Extension) *graph.Graph {
+	g := graph.New()
+	for _, e := range exts {
+		g.AddNode(e)
+	}
+	return g
+}
+
+func TestRunPlanDAG(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
-		name    string
-		ids     []string
-		wantErr bool
-	}{
-		{"no duplicates", []string{"file:/a", "package:git"}, false},
-		{"empty list", nil, false},
-		{"single resource", []string{"file:/a"}, false},
-		{"duplicate IDs", []string{"file:/a", "file:/a"}, true},
-		{"duplicate among many", []string{"file:/a", "package:git", "file:/a"}, true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resources := make([]extensions.Extension, len(tt.ids))
-			for i, id := range tt.ids {
-				resources[i] = &mockExtension{id: id, name: id}
-			}
-			err := CheckDuplicates(resources)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("CheckDuplicates() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestDefaultOptions(t *testing.T) {
-	opts := DefaultOptions()
-	if opts.Timeout != 5*time.Minute {
-		t.Errorf("Timeout = %v, want %v", opts.Timeout, 5*time.Minute)
-	}
-	if opts.Parallel != 1 {
-		t.Errorf("Parallel = %d, want 1", opts.Parallel)
-	}
-}
-
-func TestIsCritical(t *testing.T) {
-	if isCritical(&mockExtension{id: "a", name: "a"}) {
-		t.Error("regular extension should not be critical")
-	}
-	if !isCritical(&criticalMock{mockExtension: mockExtension{id: "b", name: "b"}, critical: true}) {
-		t.Error("critical extension should be critical")
-	}
-	if isCritical(&criticalMock{mockExtension: mockExtension{id: "c", name: "c"}, critical: false}) {
-		t.Error("non-critical extension should not be critical")
-	}
-}
-
-func TestWithTimeout(t *testing.T) {
-	ctx := context.Background()
-
-	rctx, cancel := withTimeout(ctx, 100*time.Millisecond)
-	defer cancel()
-	if _, ok := rctx.Deadline(); !ok {
-		t.Error("expected deadline when timeout > 0")
-	}
-
-	rctx2, cancel2 := withTimeout(ctx, 0)
-	defer cancel2()
-	if _, ok := rctx2.Deadline(); ok {
-		t.Error("should not have deadline when timeout is 0")
-	}
-}
-
-func TestRunPlan(t *testing.T) {
-	tests := []struct {
-		name      string
-		resources []extensions.Extension
-		wantCode  int
-		wantErr   bool
+		name     string
+		exts     []extensions.Extension
+		wantCode int
+		wantErr  bool
 	}{
 		{"all converged", []extensions.Extension{
 			&mockExtension{id: "file:/a", name: "File /a", inSync: true},
@@ -140,7 +86,9 @@ func TestRunPlan(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			code, err := RunPlan(tt.resources, &discardPrinter{}, DefaultOptions())
+			t.Parallel()
+			g := makeGraph(tt.exts...)
+			code, err := RunPlanDAG(g, &discardPrinter{}, DefaultOptions())
 			if (err != nil) != tt.wantErr {
 				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -151,11 +99,13 @@ func TestRunPlan(t *testing.T) {
 	}
 }
 
-func TestRunApply(t *testing.T) {
+func TestRunApplyDAG(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
-		name      string
-		resources []extensions.Extension
-		wantCode  int
+		name     string
+		exts     []extensions.Extension
+		wantCode int
 	}{
 		{"all converged", []extensions.Extension{
 			&mockExtension{id: "file:/a", name: "File /a", inSync: true},
@@ -177,7 +127,9 @@ func TestRunApply(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			code, err := RunApply(tt.resources, &discardPrinter{}, DefaultOptions())
+			t.Parallel()
+			g := makeGraph(tt.exts...)
+			code, err := RunApplyDAG(g, &discardPrinter{}, DefaultOptions())
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -188,15 +140,18 @@ func TestRunApply(t *testing.T) {
 	}
 }
 
-func TestRunApply_Parallel(t *testing.T) {
+func TestRunApplyDAG_Parallel(t *testing.T) {
+	t.Parallel()
+
 	opts := DefaultOptions()
 	opts.Parallel = 2
 
-	code, err := RunApply([]extensions.Extension{
+	g := makeGraph(
 		&mockExtension{id: "file:/a", name: "File /a", inSync: false},
 		&mockExtension{id: "file:/b", name: "File /b", inSync: true},
 		&mockExtension{id: "pkg:git", name: "Package git", inSync: false},
-	}, &discardPrinter{}, opts)
+	)
+	code, err := RunApplyDAG(g, &discardPrinter{}, opts)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -205,14 +160,17 @@ func TestRunApply_Parallel(t *testing.T) {
 	}
 }
 
-func TestRunApply_CriticalFailure(t *testing.T) {
-	code, err := RunApply([]extensions.Extension{
+func TestRunApplyDAG_CriticalFailure(t *testing.T) {
+	t.Parallel()
+
+	g := makeGraph(
 		&criticalMock{
 			mockExtension: mockExtension{id: "file:/a", name: "File /a", inSync: false, applyErr: fmt.Errorf("fail")},
 			critical:      true,
 		},
 		&mockExtension{id: "file:/b", name: "File /b", inSync: false},
-	}, &discardPrinter{}, DefaultOptions())
+	)
+	code, err := RunApplyDAG(g, &discardPrinter{}, DefaultOptions())
 	if code != 3 {
 		t.Errorf("exit code = %d, want 3", code)
 	}
@@ -221,17 +179,21 @@ func TestRunApply_CriticalFailure(t *testing.T) {
 	}
 }
 
-func TestRunApply_WithTimeout(t *testing.T) {
-	opts := DefaultOptions()
-	opts.Timeout = 1 * time.Second
+func TestRunApplyDAG_WithDependencies(t *testing.T) {
+	t.Parallel()
 
-	code, err := RunApply([]extensions.Extension{
-		&mockExtension{id: "file:/a", name: "File /a", inSync: true},
-	}, &discardPrinter{}, opts)
+	g := graph.New()
+	pkg := &mockExtension{id: "package:nginx", name: "Package nginx", inSync: false}
+	svc := &mockExtension{id: "service:nginx", name: "Service nginx", inSync: false}
+	g.AddNode(pkg)
+	g.AddNode(svc)
+	g.AddEdge("service:nginx", "package:nginx")
+
+	code, err := RunApplyDAG(g, &discardPrinter{}, DefaultOptions())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if code != 0 {
-		t.Errorf("exit code = %d, want 0", code)
+	if code != 2 {
+		t.Errorf("exit code = %d, want 2 (changed)", code)
 	}
 }

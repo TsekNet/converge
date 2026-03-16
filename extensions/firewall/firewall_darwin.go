@@ -11,11 +11,12 @@ import (
 	"strings"
 
 	"github.com/TsekNet/converge/extensions"
+	"github.com/TsekNet/converge/internal/version"
 )
 
 const (
 	pfConf    = "/etc/pf.conf"
-	pfAnchor  = "converge"
+	pfAnchor  = version.Name
 	anchorDir = "/etc/pf.anchors"
 )
 

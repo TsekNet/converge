@@ -34,3 +34,23 @@ func (b *brewManager) Remove(ctx context.Context, name string) error {
 	}
 	return nil
 }
+
+func (b *brewManager) InstallBatch(ctx context.Context, names []string) error {
+	args := append([]string{"install"}, names...)
+	cmd := exec.CommandContext(ctx, "brew", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("brew install %s: %s: %w", strings.Join(names, " "), strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func (b *brewManager) RemoveBatch(ctx context.Context, names []string) error {
+	args := append([]string{"uninstall"}, names...)
+	cmd := exec.CommandContext(ctx, "brew", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("brew uninstall %s: %s: %w", strings.Join(names, " "), strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}

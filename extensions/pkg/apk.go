@@ -37,3 +37,23 @@ func (a *apkManager) Remove(ctx context.Context, name string) error {
 	}
 	return nil
 }
+
+func (a *apkManager) InstallBatch(ctx context.Context, names []string) error {
+	args := append([]string{"add", "--no-cache"}, names...)
+	cmd := exec.CommandContext(ctx, "apk", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("apk add %s: %s: %w", strings.Join(names, " "), strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func (a *apkManager) RemoveBatch(ctx context.Context, names []string) error {
+	args := append([]string{"del"}, names...)
+	cmd := exec.CommandContext(ctx, "apk", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("apk del %s: %s: %w", strings.Join(names, " "), strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}

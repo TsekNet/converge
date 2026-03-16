@@ -37,10 +37,10 @@ type jsonOutput struct {
 }
 
 type jsonSummary struct {
-	Changed    int   `json:"changed"`
+	Changed    int   `json:"changed,omitempty"`
 	Pending    int   `json:"pending,omitempty"`
-	OK         int   `json:"ok"`
-	Failed     int   `json:"failed"`
+	OK         int   `json:"ok,omitempty"`
+	Failed     int   `json:"failed,omitempty"`
 	Total      int   `json:"total"`
 	DurationMs int64 `json:"duration_ms"`
 }
@@ -94,6 +94,14 @@ func (p *JSONPrinter) ApplyResult(ext extensions.Extension, result *extensions.R
 	}
 	if result.Err != nil {
 		jr.Error = result.Err.Error()
+	}
+	for _, c := range result.Changes {
+		jr.Changes = append(jr.Changes, jsonChange{
+			Property: c.Property,
+			From:     c.From,
+			To:       c.To,
+			Action:   c.Action,
+		})
 	}
 	p.resources = append(p.resources, jr)
 }

@@ -5,18 +5,39 @@ package firewall
 import (
 	"context"
 	"fmt"
-	"strings"
+	"runtime"
 
 	"github.com/TsekNet/converge/extensions"
-	"golang.org/x/sys/windows"
-	"golang.org/x/sys/windows/registry"
+	"github.com/go-ole/go-ole"
+	"github.com/go-ole/go-ole/oleutil"
 )
 
-const firewallRulesKey = `SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\FirewallRules`
+// NET_FW constants matching the Windows Firewall COM enums.
+const (
+	netFwIPProtocolTCP = 6
+	netFwIPProtocolUDP = 17
+	netFwRuleDirectionIn  = 1
+	netFwRuleDirectionOut = 2
+	netFwActionBlock = 0
+	netFwActionAllow = 1
+)
 
-// Check determines whether a matching firewall rule exists with correct content.
+var directionMap = map[string]int32{"inbound": netFwRuleDirectionIn, "outbound": netFwRuleDirectionOut}
+var actionMap = map[string]int32{"block": netFwActionBlock, "allow": netFwActionAllow}
+var protocolMap = map[string]int32{"tcp": netFwIPProtocolTCP, "udp": netFwIPProtocolUDP}
+
+// Check determines whether a matching firewall rule exists with correct properties.
 func (f *Firewall) Check(_ context.Context) (*extensions.State, error) {
-	exists, contentMatch, err := f.ruleState()
+	exists, match, err := f.withCOM(func(rules *ole.IDispatch) (bool, bool, error) {
+		rule, err := oleutil.CallMethod(rules, "Item", f.Name)
+		if err != nil {
+			return false, false, nil // rule not found
+		}
+		r := rule.ToIDispatch()
+		defer r.Release()
+
+		return true, f.ruleMatches(r), nil
+	})
 	if err != nil {
 		return nil, fmt.Errorf("check firewall rule %q: %w", f.Name, err)
 	}
@@ -24,7 +45,7 @@ func (f *Firewall) Check(_ context.Context) (*extensions.State, error) {
 	wantPresent := f.State != "absent"
 
 	if wantPresent {
-		if exists && contentMatch {
+		if exists && match {
 			return &extensions.State{InSync: true}, nil
 		}
 		action := "add"
@@ -45,7 +66,7 @@ func (f *Firewall) Check(_ context.Context) (*extensions.State, error) {
 	return checkResult(f.Name, exists, false)
 }
 
-// Apply creates or removes the firewall rule via the registry.
+// Apply creates or removes the firewall rule via the Windows Firewall COM API.
 func (f *Firewall) Apply(_ context.Context) (*extensions.Result, error) {
 	if f.State == "absent" {
 		return f.removeRule()
@@ -53,140 +74,125 @@ func (f *Firewall) Apply(_ context.Context) (*extensions.Result, error) {
 	return f.addRule()
 }
 
-func (f *Firewall) registryName() string {
-	return "converge-" + f.Name
-}
-
-func (f *Firewall) withRulesKey(access uint32, fn func(k registry.Key) error) error {
-	k, err := registry.OpenKey(registry.LOCAL_MACHINE, firewallRulesKey, access)
-	if err != nil {
-		return fmt.Errorf("open firewall rules key: %w", err)
-	}
-	defer k.Close()
-	return fn(k)
-}
-
 func (f *Firewall) addRule() (*extensions.Result, error) {
-	ruleData := f.buildRuleString()
-	name := f.registryName()
+	_, _, err := f.withCOM(func(rules *ole.IDispatch) (bool, bool, error) {
+		// Remove existing rule if any (atomic replace).
+		oleutil.CallMethod(rules, "Remove", f.Name)
 
-	if err := f.withRulesKey(registry.SET_VALUE, func(k registry.Key) error {
-		return k.SetStringValue(name, ruleData)
-	}); err != nil {
-		return nil, fmt.Errorf("set firewall rule %q: %w", f.Name, err)
+		// Create a new rule via COM.
+		unknown, err := oleutil.CreateObject("HNetCfg.FWRule")
+		if err != nil {
+			return false, false, fmt.Errorf("create FWRule: %w", err)
+		}
+		defer unknown.Release()
+
+		rule, err := unknown.QueryInterface(ole.IID_IDispatch)
+		if err != nil {
+			return false, false, fmt.Errorf("query IDispatch: %w", err)
+		}
+		defer rule.Release()
+
+		oleutil.PutProperty(rule, "Name", f.Name)
+		oleutil.PutProperty(rule, "Description", "Managed by converge")
+		oleutil.PutProperty(rule, "Protocol", protocolMap[f.Protocol])
+		oleutil.PutProperty(rule, "Direction", directionMap[f.Direction])
+		oleutil.PutProperty(rule, "Action", actionMap[f.Action])
+		oleutil.PutProperty(rule, "Enabled", true)
+
+		if f.Port > 0 {
+			oleutil.PutProperty(rule, "LocalPorts", fmt.Sprintf("%d", f.Port))
+		}
+		if f.Source != "" {
+			oleutil.PutProperty(rule, "RemoteAddresses", f.Source)
+		}
+		if f.Dest != "" {
+			oleutil.PutProperty(rule, "LocalAddresses", f.Dest)
+		}
+
+		if _, err := oleutil.CallMethod(rules, "Add", rule); err != nil {
+			return false, false, fmt.Errorf("add rule: %w", err)
+		}
+
+		return false, false, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("add firewall rule %q: %w", f.Name, err)
 	}
-
-	if err := notifyFirewallChange(); err != nil {
-		return nil, fmt.Errorf("notify firewall service: %w", err)
-	}
-
 	return resultChanged("added")
 }
 
 func (f *Firewall) removeRule() (*extensions.Result, error) {
-	name := f.registryName()
-	var notFound bool
-
-	if err := f.withRulesKey(registry.SET_VALUE, func(k registry.Key) error {
-		err := k.DeleteValue(name)
-		if err == registry.ErrNotExist {
-			notFound = true
-			return nil
+	_, _, err := f.withCOM(func(rules *ole.IDispatch) (bool, bool, error) {
+		if _, err := oleutil.CallMethod(rules, "Remove", f.Name); err != nil {
+			// Rule not found is not an error.
+			return false, false, nil
 		}
-		return err
-	}); err != nil {
-		return nil, fmt.Errorf("delete firewall rule %q: %w", f.Name, err)
+		return false, false, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("remove firewall rule %q: %w", f.Name, err)
 	}
-
-	if notFound {
-		return &extensions.Result{Changed: false, Status: extensions.StatusOK, Message: "already absent"}, nil
-	}
-
-	if err := notifyFirewallChange(); err != nil {
-		return nil, fmt.Errorf("notify firewall service: %w", err)
-	}
-
 	return resultChanged("removed")
 }
 
-func (f *Firewall) ruleState() (exists, contentMatch bool, err error) {
-	err = f.withRulesKey(registry.QUERY_VALUE, func(k registry.Key) error {
-		val, _, e := k.GetStringValue(f.registryName())
-		if e == registry.ErrNotExist {
-			return nil
-		}
-		if e != nil {
-			return e
-		}
-		exists = true
-		contentMatch = val == f.buildRuleString()
-		return nil
-	})
-	return
-}
+// ruleMatches checks if an existing rule has the expected properties.
+func (f *Firewall) ruleMatches(r *ole.IDispatch) bool {
+	proto, _ := oleutil.GetProperty(r, "Protocol")
+	dir, _ := oleutil.GetProperty(r, "Direction")
+	act, _ := oleutil.GetProperty(r, "Action")
+	enabled, _ := oleutil.GetProperty(r, "Enabled")
+	ports, _ := oleutil.GetProperty(r, "LocalPorts")
 
-var winAction = map[string]string{"block": "Block", "allow": "Allow"}
-var winDirection = map[string]string{"outbound": "Out", "inbound": "In"}
-var winProtocol = map[string]int{"udp": 17, "tcp": 6}
-
-// buildRuleString creates the pipe-delimited rule format used by Windows Firewall.
-// Port always means destination port of the packet.
-func (f *Firewall) buildRuleString() string {
-	parts := []string{
-		"v2.33",
-		"Action=" + winAction[f.Action],
-		"Active=TRUE",
-		"Dir=" + winDirection[f.Direction],
-		fmt.Sprintf("Protocol=%d", winProtocol[f.Protocol]),
+	if proto.Val != int64(protocolMap[f.Protocol]) {
+		return false
 	}
-
+	if dir.Val != int64(directionMap[f.Direction]) {
+		return false
+	}
+	if act.Val != int64(actionMap[f.Action]) {
+		return false
+	}
+	if enabled.Val == 0 {
+		return false
+	}
 	if f.Port > 0 {
-		if f.Direction == "inbound" {
-			parts = append(parts, fmt.Sprintf("LPort=%d", f.Port))
-		} else {
-			parts = append(parts, fmt.Sprintf("RPort=%d", f.Port))
+		portStr := fmt.Sprintf("%d", f.Port)
+		if ports.ToString() != portStr {
+			return false
 		}
 	}
-
-	// For inbound: Source=remote, Dest=local.
-	// For outbound: Source=local, Dest=remote.
-	if f.Source != "" {
-		if f.Direction == "inbound" {
-			parts = append(parts, "RA4="+f.Source)
-		} else {
-			parts = append(parts, "LA4="+f.Source)
-		}
-	}
-	if f.Dest != "" {
-		if f.Direction == "inbound" {
-			parts = append(parts, "LA4="+f.Dest)
-		} else {
-			parts = append(parts, "RA4="+f.Dest)
-		}
-	}
-
-	parts = append(parts, "Name="+f.Name, "Desc=Managed by converge")
-	return strings.Join(parts, "|")
+	return true
 }
 
-func notifyFirewallChange() error {
-	const serviceName = "mpssvc"
-	m, err := windows.OpenSCManager(nil, nil, windows.SC_MANAGER_CONNECT)
-	if err != nil {
-		return fmt.Errorf("open SCManager: %w", err)
-	}
-	defer windows.CloseServiceHandle(m)
+// withCOM initializes COM, gets the firewall rules collection, and calls fn.
+// Handles all COM lifecycle (init, create, release).
+func (f *Firewall) withCOM(fn func(rules *ole.IDispatch) (bool, bool, error)) (bool, bool, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 
-	s, err := windows.OpenService(m, windows.StringToUTF16Ptr(serviceName), windows.SERVICE_PAUSE_CONTINUE)
-	if err != nil {
-		// Service not accessible: rule takes effect on next service restart.
-		return nil
+	if err := ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED); err != nil {
+		return false, false, fmt.Errorf("CoInitializeEx: %w", err)
 	}
-	defer windows.CloseServiceHandle(s)
+	defer ole.CoUninitialize()
 
-	var status windows.SERVICE_STATUS
-	if err := windows.ControlService(s, windows.SERVICE_CONTROL_PARAMCHANGE, &status); err != nil {
-		return fmt.Errorf("notify mpssvc: %w", err)
+	unknown, err := oleutil.CreateObject("HNetCfg.FwPolicy2")
+	if err != nil {
+		return false, false, fmt.Errorf("create FwPolicy2: %w", err)
 	}
-	return nil
+	defer unknown.Release()
+
+	policy, err := unknown.QueryInterface(ole.IID_IDispatch)
+	if err != nil {
+		return false, false, fmt.Errorf("query IDispatch: %w", err)
+	}
+	defer policy.Release()
+
+	rulesResult, err := oleutil.GetProperty(policy, "Rules")
+	if err != nil {
+		return false, false, fmt.Errorf("get Rules: %w", err)
+	}
+	rules := rulesResult.ToIDispatch()
+	defer rules.Release()
+
+	return fn(rules)
 }

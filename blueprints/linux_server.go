@@ -13,14 +13,14 @@ func LinuxServer(r *dsl.Run) {
 			"PasswordAuthentication no\n" +
 			"X11Forwarding no\n" +
 			"MaxAuthTries 3\n",
-		Mode:     0600,
-		Critical: true,
+		Mode: 0600,
+		Meta: dsl.ResourceMeta{Critical: true},
 	})
 
 	r.Service("sshd", dsl.ServiceOpts{
-		State:    dsl.Running,
-		Enable:   true,
-		Critical: true,
+		State:  dsl.Running,
+		Enable: true,
+		Meta:   dsl.ResourceMeta{Critical: true},
 	})
 
 	r.Package("fail2ban", dsl.PackageOpts{State: dsl.Present})

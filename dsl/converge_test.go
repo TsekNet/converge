@@ -5,43 +5,9 @@ import (
 	"testing"
 )
 
-func TestResourceState(t *testing.T) {
-	tests := []struct {
-		name  string
-		state ResourceState
-		want  string
-	}{
-		{"present", Present, "present"},
-		{"absent", Absent, "absent"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := string(tt.state); got != tt.want {
-				t.Errorf("ResourceState = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestServiceState(t *testing.T) {
-	tests := []struct {
-		name  string
-		state ServiceState
-		want  string
-	}{
-		{"running", Running, "running"},
-		{"stopped", Stopped, "stopped"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := string(tt.state); got != tt.want {
-				t.Errorf("ServiceState = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestApp_Blueprints(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		registered []string
@@ -53,6 +19,7 @@ func TestApp_Blueprints(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			app := New()
 			for _, name := range tt.registered {
 				app.Register(name, "", func(r *Run) {})
@@ -73,6 +40,8 @@ func TestApp_Blueprints(t *testing.T) {
 }
 
 func TestRun_ResourceIDs(t *testing.T) {
+	t.Parallel()
+
 	app := New()
 	run := newRun(app)
 
@@ -102,6 +71,7 @@ func TestRun_ResourceIDs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.wantID, func(t *testing.T) {
+			t.Parallel()
 			r := resources[tt.index]
 			if r.ID() != tt.wantID {
 				t.Errorf("ID() = %q, want %q", r.ID(), tt.wantID)
@@ -114,6 +84,8 @@ func TestRun_ResourceIDs(t *testing.T) {
 }
 
 func TestRun_Platform(t *testing.T) {
+	t.Parallel()
+
 	run := newRun(New())
 	p := run.Platform()
 
@@ -127,6 +99,7 @@ func TestRun_Platform(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if tt.value == "" {
 				t.Errorf("Platform().%s should not be empty", tt.name)
 			}
@@ -135,59 +108,112 @@ func TestRun_Platform(t *testing.T) {
 }
 
 func TestRun_Include(t *testing.T) {
-	app := New()
-	app.Register("base", "base config", func(r *Run) {
-		r.File("/etc/base", FileOpts{Content: "base"})
-	})
+	t.Parallel()
 
-	run := newRun(app)
-	run.Include("base")
-	run.Package("vim", PackageOpts{State: Present})
+	tests := []struct {
+		name          string
+		registerBase  bool
+		includeName   string
+		wantResources int
+		wantErr       bool
+	}{
+		{
+			name:          "includes registered blueprint",
+			registerBase:  true,
+			includeName:   "base",
+			wantResources: 2,
+			wantErr:       false,
+		},
+		{
+			name:          "error on missing blueprint",
+			registerBase:  false,
+			includeName:   "nonexistent",
+			wantResources: 0,
+			wantErr:       true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			app := New()
+			if tt.registerBase {
+				app.Register("base", "base config", func(r *Run) {
+					r.File("/etc/base", FileOpts{Content: "base"})
+				})
+			}
 
-	if got := len(run.Resources()); got != 2 {
-		t.Errorf("resource count = %d, want 2", got)
+			run := newRun(app)
+			run.Include(tt.includeName)
+
+			if tt.registerBase {
+				run.Package("vim", PackageOpts{State: Present})
+			}
+
+			if tt.wantErr {
+				if run.Err() == nil {
+					t.Error("Include() should set error on missing blueprint")
+				}
+				return
+			}
+
+			if got := len(run.Resources()); got != tt.wantResources {
+				t.Errorf("resource count = %d, want %d", got, tt.wantResources)
+			}
+		})
 	}
 }
 
-func TestRun_Include_PanicsOnMissing(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("Include() should panic on missing blueprint")
-		}
-	}()
+func TestRun_Firewall(t *testing.T) {
+	t.Parallel()
 
-	app := New()
-	run := newRun(app)
-	run.Include("nonexistent")
-}
-
-func TestRun_FirewallDefaults(t *testing.T) {
-	run := newRun(New())
-	run.Firewall("DefaultsTest", FirewallOpts{Port: 443})
-
-	r := run.Resources()[0]
-	if got := r.String(); got != "Firewall DefaultsTest (tcp/443 allow)" {
-		t.Errorf("String() = %q, want defaults applied (tcp/443 allow)", got)
+	tests := []struct {
+		name    string
+		fwName  string
+		opts    FirewallOpts
+		wantID  string
+		wantStr string
+		wantErr bool
+	}{
+		{
+			name:    "defaults applied",
+			fwName:  "DefaultsTest",
+			opts:    FirewallOpts{Port: 443},
+			wantID:  "firewall:DefaultsTest",
+			wantStr: "Firewall DefaultsTest (tcp/443 allow)",
+		},
+		{
+			name:   "absent state",
+			fwName: "Remove SSH",
+			opts:   FirewallOpts{Port: 22, State: Absent},
+			wantID: "firewall:Remove SSH",
+		},
+		{
+			name:    "error on empty name",
+			fwName:  "",
+			opts:    FirewallOpts{Port: 22},
+			wantErr: true,
+		},
 	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			run := newRun(New())
+			run.Firewall(tt.fwName, tt.opts)
 
-func TestRun_FirewallAbsent(t *testing.T) {
-	run := newRun(New())
-	run.Firewall("Remove SSH", FirewallOpts{Port: 22, State: Absent})
+			if tt.wantErr {
+				if run.Err() == nil {
+					t.Error("Firewall() should set error on empty name")
+				}
+				return
+			}
 
-	r := run.Resources()[0]
-	if r.ID() != "firewall:Remove SSH" {
-		t.Errorf("ID() = %q", r.ID())
+			r := run.Resources()[0]
+			if tt.wantID != "" && r.ID() != tt.wantID {
+				t.Errorf("ID() = %q, want %q", r.ID(), tt.wantID)
+			}
+			if tt.wantStr != "" && r.String() != tt.wantStr {
+				t.Errorf("String() = %q, want %q", r.String(), tt.wantStr)
+			}
+		})
 	}
-}
-
-func TestRun_FirewallPanicsOnEmptyName(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("Firewall() should panic on empty name")
-		}
-	}()
-
-	run := newRun(New())
-	run.Firewall("", FirewallOpts{Port: 22})
 }

@@ -1,33 +1,78 @@
 package dsl
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/TsekNet/converge/extensions"
+	"github.com/TsekNet/converge/internal/graph"
 	"github.com/TsekNet/converge/internal/platform"
 )
 
+func toNodeMeta(m ResourceMeta) graph.NodeMeta {
+	return graph.NodeMeta{
+		Noop:      m.Noop,
+		Retry:     m.Retry,
+		Limit:     m.Limit,
+		AutoEdge:  m.AutoEdge,
+		AutoGroup: m.AutoGroup,
+	}
+}
+
 // Run is the context passed to blueprints for declaring resources.
+// Errors during resource declaration are accumulated, not panicked.
 type Run struct {
-	resources []extensions.Extension
-	platform  platform.Info
-	app       *App
+	graph    *graph.Graph
+	platform platform.Info
+	app      *App
+	errs     []error
 }
 
 func newRun(app *App) *Run {
 	return &Run{
+		graph:    graph.New(),
 		platform: platform.Detect(),
 		app:      app,
 	}
 }
 
-func (r *Run) addResource(ext extensions.Extension) {
-	r.resources = append(r.resources, ext)
+func (r *Run) addResource(ext extensions.Extension, meta ResourceMeta) {
+	if err := r.graph.AddNode(ext); err != nil {
+		r.errs = append(r.errs, fmt.Errorf("%s: %v", ext.ID(), err))
+		return
+	}
+	r.graph.SetMeta(ext.ID(), toNodeMeta(meta))
+	for _, dep := range meta.DependsOn {
+		if err := r.graph.AddEdge(ext.ID(), dep); err != nil {
+			r.errs = append(r.errs, fmt.Errorf("dependency %s -> %s: %v", ext.ID(), dep, err))
+			return
+		}
+	}
 }
 
-// Resources returns the collected extensions for engine processing.
+// require validates that a required field is not empty, appends an error
+// if it is, and returns false to signal the caller to bail out.
+func (r *Run) require(resource, field, value string) bool {
+	if value == "" {
+		r.errs = append(r.errs, fmt.Errorf("%s requires %s (got empty string)", resource, field))
+		return false
+	}
+	return true
+}
+
+// Err returns all errors encountered during blueprint execution, joined.
+func (r *Run) Err() error {
+	return errors.Join(r.errs...)
+}
+
+// Graph returns the resource dependency graph for engine processing.
+func (r *Run) Graph() *graph.Graph {
+	return r.graph
+}
+
+// Resources returns collected extensions in insertion order.
 func (r *Run) Resources() []extensions.Extension {
-	return r.resources
+	return r.graph.OrderedExtensions()
 }
 
 // Platform returns detected OS, distro, package manager, and init system info.
@@ -38,49 +83,65 @@ func (r *Run) Platform() platform.Info {
 // Include runs another registered blueprint within this Run context.
 func (r *Run) Include(name string) {
 	if r.app == nil {
-		panic(fmt.Sprintf("converge: Include(%q): no app context", name))
+		r.errs = append(r.errs, fmt.Errorf("Include(%q): no app context", name))
+		return
 	}
 	entry, ok := r.app.blueprints[name]
 	if !ok {
-		panic(fmt.Sprintf("converge: Include(%q): blueprint not registered", name))
+		r.errs = append(r.errs, fmt.Errorf("Include(%q): blueprint not registered", name))
+		return
 	}
 	entry.fn(r)
 }
 
 func (r *Run) File(path string, opts FileOpts) {
-	mustNotBeEmpty("File", "path", path)
-	r.addResource(newFileExtension(path, opts))
+	if !r.require("File", "path", path) {
+		return
+	}
+	r.addResource(newFileExtension(path, opts), opts.Meta)
 }
 
 func (r *Run) Package(name string, opts PackageOpts) {
-	mustNotBeEmpty("Package", "name", name)
+	if !r.require("Package", "name", name) {
+		return
+	}
 	if opts.State == "" {
 		opts.State = Present
 	}
-	r.addResource(newPackageExtension(name, opts, r.platform.PkgManager))
+	r.addResource(newPackageExtension(name, opts, r.platform.PkgManager), opts.Meta)
 }
 
 func (r *Run) Service(name string, opts ServiceOpts) {
-	mustNotBeEmpty("Service", "name", name)
+	if !r.require("Service", "name", name) {
+		return
+	}
 	if opts.State == "" {
 		opts.State = Running
 	}
-	r.addResource(newServiceExtension(name, opts, r.platform.InitSystem))
+	r.addResource(newServiceExtension(name, opts, r.platform.InitSystem), opts.Meta)
 }
 
 func (r *Run) Exec(name string, opts ExecOpts) {
-	mustNotBeEmpty("Exec", "name", name)
-	mustNotBeEmpty("Exec", "command", opts.Command)
-	r.addResource(newExecExtension(name, opts))
+	if !r.require("Exec", "name", name) {
+		return
+	}
+	if !r.require("Exec", "command", opts.Command) {
+		return
+	}
+	r.addResource(newExecExtension(name, opts), opts.Meta)
 }
 
 func (r *Run) User(name string, opts UserOpts) {
-	mustNotBeEmpty("User", "name", name)
-	r.addResource(newUserExtension(name, opts))
+	if !r.require("User", "name", name) {
+		return
+	}
+	r.addResource(newUserExtension(name, opts), opts.Meta)
 }
 
 func (r *Run) Firewall(name string, opts FirewallOpts) {
-	mustNotBeEmpty("Firewall", "name", name)
+	if !r.require("Firewall", "name", name) {
+		return
+	}
 	if opts.Protocol == "" {
 		opts.Protocol = "tcp"
 	}
@@ -90,11 +151,5 @@ func (r *Run) Firewall(name string, opts FirewallOpts) {
 	if opts.Action == "" {
 		opts.Action = "allow"
 	}
-	r.addResource(newFirewallExtension(name, opts))
-}
-
-func mustNotBeEmpty(resource, field, value string) {
-	if value == "" {
-		panic(fmt.Sprintf("converge: %s requires %s (got empty string)", resource, field))
-	}
+	r.addResource(newFirewallExtension(name, opts), opts.Meta)
 }

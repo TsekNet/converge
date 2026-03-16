@@ -19,10 +19,10 @@ func main() {
 
 func newApp() *dsl.App {
 	a := dsl.New()
-	a.Register("workstation", "Developer workstation baseline", blueprints.Workstation)
+	a.Register("baseline", "Cross-platform baseline for all managed hosts", blueprints.Baseline)
 	a.Register("linux", "Common Linux system baseline", blueprints.Linux)
 	a.Register("linux_server", "Hardened Linux server", blueprints.LinuxServer)
-	a.Register("darwin", "macOS workstation", blueprints.Darwin)
+	a.Register("darwin", "macOS configuration", blueprints.Darwin)
 	registerPlatformBlueprints(a)
 	return a
 }

@@ -3,11 +3,12 @@ package dsl
 import (
 	"fmt"
 	"maps"
-	"os"
-	"runtime"
 	"slices"
 
 	"github.com/TsekNet/converge/internal/engine"
+	"github.com/TsekNet/converge/internal/exit"
+	"github.com/TsekNet/converge/internal/graph"
+	"github.com/TsekNet/converge/internal/graph/autoedge"
 	"github.com/TsekNet/converge/internal/output"
 	"github.com/TsekNet/converge/internal/version"
 )
@@ -73,52 +74,34 @@ func (a *App) Version() string {
 	return version.Version
 }
 
+// BuildGraph constructs the resource dependency graph for a named blueprint.
+func (a *App) BuildGraph(name string) (*graph.Graph, error) {
+	entry, ok := a.blueprints[name]
+	if !ok {
+		return nil, fmt.Errorf("blueprint %q not found", name)
+	}
+
+	run := newRun(a)
+	entry.fn(run)
+	if run.Err() != nil {
+		return nil, run.Err()
+	}
+
+	if err := autoedge.AddAutoEdges(run.Graph()); err != nil {
+		return nil, fmt.Errorf("auto-edges: %w", err)
+	}
+
+	return run.Graph(), nil
+}
+
 func (a *App) RunPlan(name string, printer output.Printer) (int, error) {
-	entry, ok := a.blueprints[name]
-	if !ok {
-		return 11, fmt.Errorf("blueprint %q not found", name)
+	if _, ok := a.blueprints[name]; !ok {
+		return exit.NotFound, fmt.Errorf("blueprint %q not found", name)
 	}
-
-	run := newRun(a)
-	entry.fn(run)
-
-	resources := run.Resources()
-	if err := engine.CheckDuplicates(resources); err != nil {
-		return 1, err
+	g, err := a.BuildGraph(name)
+	if err != nil {
+		return exit.Error, err
 	}
-
-	return engine.RunPlan(resources, printer, a.EngineOpts)
+	return engine.RunPlanDAG(g, printer, a.EngineOpts)
 }
 
-func (a *App) RunApply(name string, printer output.Printer) (int, error) {
-	entry, ok := a.blueprints[name]
-	if !ok {
-		return 11, fmt.Errorf("blueprint %q not found", name)
-	}
-
-	if !isRoot() {
-		return 10, fmt.Errorf("converge apply requires root/administrator privileges")
-	}
-
-	run := newRun(a)
-	entry.fn(run)
-
-	resources := run.Resources()
-	if err := engine.CheckDuplicates(resources); err != nil {
-		return 1, err
-	}
-
-	return engine.RunApply(resources, printer, a.EngineOpts)
-}
-
-func isRoot() bool {
-	if runtime.GOOS == "windows" {
-		f, err := os.Open("\\\\.\\PHYSICALDRIVE0")
-		if err != nil {
-			return false
-		}
-		f.Close()
-		return true
-	}
-	return os.Geteuid() == 0
-}

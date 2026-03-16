@@ -20,6 +20,25 @@
         <Component Id="ConvergeExe" Guid="B2C3D4E5-F6A7-8901-BCDE-F12345678901">
           <File Id="ConvergeExeFile" Source="$(var.StagingDir)/converge.exe" KeyPath="yes" />
           <Environment Id="PATH" Name="PATH" Value="[ConvergeDir]" Permanent="no" Part="last" Action="set" System="yes" />
+
+          <!-- Register as a Windows service -->
+          <ServiceInstall
+            Id="ConvergeService"
+            Name="converge"
+            DisplayName="Converge Configuration Daemon"
+            Description="Desired-state configuration daemon that watches for drift and re-converges."
+            Start="auto"
+            Type="ownProcess"
+            ErrorControl="normal"
+            Arguments="serve baseline" />
+
+          <ServiceControl
+            Id="ConvergeServiceControl"
+            Name="converge"
+            Start="install"
+            Stop="both"
+            Remove="uninstall"
+            Wait="yes" />
         </Component>
         <Component Id="CleanupDir" Guid="F6A7B8C9-D012-3456-EF01-789012CDEF01">
           <RemoveFolder Id="RemoveConvergeDir" On="uninstall" />

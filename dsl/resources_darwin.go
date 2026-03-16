@@ -12,6 +12,6 @@ func newPlistExtension(domain string, opts PlistOpts) extensions.Extension {
 	p.Value = opts.Value
 	p.Type = opts.Type
 	p.Host = opts.Host
-	p.Critical = opts.Critical
+	p.Critical = opts.Meta.Critical
 	return p
 }

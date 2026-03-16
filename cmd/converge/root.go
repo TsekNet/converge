@@ -5,7 +5,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/TsekNet/converge/internal/exit"
 	"github.com/TsekNet/converge/internal/logging"
+	"github.com/TsekNet/converge/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -16,7 +18,7 @@ var parallel int
 var detailedExitCodes bool
 
 var rootCmd = &cobra.Command{
-	Use:   "converge",
+	Use:   version.Name,
 	Short: "Desired State Configuration, Compiled",
 	Long:  "Converge manages system state using Go blueprints compiled into a single binary.",
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
@@ -27,7 +29,7 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.PersistentFlags().StringVar(&outputFormat, "out", "terminal", "output format: terminal, serial, json")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "detailed output")
-	rootCmd.PersistentFlags().DurationVar(&timeout, "timeout", 5*time.Minute, "per-resource timeout")
+	rootCmd.PersistentFlags().DurationVar(&timeout, "resource-timeout", 5*time.Minute, "per-resource timeout for Check/Apply cycles")
 	rootCmd.PersistentFlags().IntVar(&parallel, "parallel", 1, "max concurrent resources (1 = sequential)")
 	rootCmd.PersistentFlags().BoolVar(&detailedExitCodes, "detailed-exit-codes", false, "use granular exit codes (2=changed, 3=partial, 4=all failed, 5=pending)")
 }
@@ -46,7 +48,7 @@ func simplifyExit(code int) int {
 		return code
 	}
 	switch code {
-	case 0, 2, 5:
+	case exit.OK, exit.Changed, exit.Pending:
 		return 0
 	default:
 		return 1

@@ -2,13 +2,18 @@ package blueprints
 
 import "github.com/TsekNet/converge/dsl"
 
-// Workstation declares desired state for a developer workstation.
-// Cross-platform: uses runtime detection for platform-specific paths.
-func Workstation(r *dsl.Run) {
+// Baseline declares the cross-platform baseline every managed host gets.
+// Platform-specific resources use runtime detection.
+func Baseline(r *dsl.Run) {
 	p := r.Platform()
 
 	// Common packages across all platforms.
-	for _, pkg := range []string{"git", "curl", "neovim"} {
+	// Winget requires package IDs (e.g. Git.Git), other managers use short names.
+	packages := []string{"git", "curl", "neovim"}
+	if p.PkgManager == "winget" {
+		packages = []string{"Git.Git", "cURL.cURL", "Neovim.Neovim"}
+	}
+	for _, pkg := range packages {
 		r.Package(pkg, dsl.PackageOpts{State: dsl.Present})
 	}
 
@@ -27,7 +32,12 @@ func Workstation(r *dsl.Run) {
 	}
 
 	if p.OS == "linux" {
-		r.Service("sshd", dsl.ServiceOpts{
+		// Debian/Ubuntu use "ssh", RHEL/Fedora use "sshd".
+		sshService := "sshd"
+		if p.Distro == "ubuntu" || p.Distro == "debian" {
+			sshService = "ssh"
+		}
+		r.Service(sshService, dsl.ServiceOpts{
 			State:  dsl.Running,
 			Enable: true,
 		})
@@ -35,6 +45,14 @@ func Workstation(r *dsl.Run) {
 		r.User("devuser", dsl.UserOpts{
 			Groups: []string{"sudo"},
 			Shell:  "/bin/bash",
+		})
+	}
+
+	if p.OS == "windows" {
+		// Windows Time service: safe to manage, always present.
+		r.Service("w32time", dsl.ServiceOpts{
+			State:       dsl.Running,
+			StartupType: "auto",
 		})
 	}
 

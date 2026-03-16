@@ -37,3 +37,23 @@ func (c *chocoManager) Remove(ctx context.Context, name string) error {
 	}
 	return nil
 }
+
+func (c *chocoManager) InstallBatch(ctx context.Context, names []string) error {
+	args := append([]string{"install", "-y"}, names...)
+	cmd := exec.CommandContext(ctx, "choco", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("choco install %s: %s: %w", strings.Join(names, " "), strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func (c *chocoManager) RemoveBatch(ctx context.Context, names []string) error {
+	args := append([]string{"uninstall", "-y"}, names...)
+	cmd := exec.CommandContext(ctx, "choco", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("choco uninstall %s: %s: %w", strings.Join(names, " "), strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}

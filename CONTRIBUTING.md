@@ -22,7 +22,7 @@ Requires Go 1.26+. No other dependencies.
 
 ## Adding an Extension
 
-See **[docs/extending.md](docs/extending.md)** for the full guide including platform-specific build tags.
+See **[docs/extensions.md](docs/extensions.md)** for the full guide including platform-specific build tags.
 
 Short version: implement the [`Extension` interface](extensions/extension.go), drop a file in the right `extensions/` subdirectory, add tests, open a PR.
 
