@@ -11,7 +11,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var once bool
+var (
+	once       bool
+	maxRetries int
+)
 
 var watchCmd = &cobra.Command{
 	Use:   "watch [blueprint]",
@@ -29,9 +32,10 @@ var watchCmd = &cobra.Command{
 		}
 
 		opts := daemon.Options{
-			Timeout:  timeout,
-			Parallel: parallel,
-			Once:     once,
+			Timeout:    timeout,
+			Parallel:   parallel,
+			Once:       once,
+			MaxRetries: maxRetries,
 		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -47,5 +51,6 @@ var watchCmd = &cobra.Command{
 
 func init() {
 	watchCmd.Flags().BoolVar(&once, "once", false, "exit after initial convergence (CI/Packer mode)")
+	watchCmd.Flags().IntVar(&maxRetries, "max-retries", 3, "max retries before marking a resource noncompliant")
 	rootCmd.AddCommand(watchCmd)
 }

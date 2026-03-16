@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -184,6 +185,116 @@ func TestDaemon_DefaultPollInterval(t *testing.T) {
 
 	if ext.applied.Load() < 1 {
 		t.Errorf("Apply called %d times, want >= 1", ext.applied.Load())
+	}
+}
+
+// mockFailExt always fails Apply, used for retry/noncompliance testing.
+type mockFailExt struct {
+	id         string
+	applyCount atomic.Int32
+}
+
+func (m *mockFailExt) ID() string { return m.id }
+func (m *mockFailExt) Check(_ context.Context) (*extensions.State, error) {
+	return &extensions.State{InSync: false}, nil
+}
+func (m *mockFailExt) Apply(_ context.Context) (*extensions.Result, error) {
+	m.applyCount.Add(1)
+	return nil, fmt.Errorf("always fails")
+}
+func (m *mockFailExt) String() string { return m.id }
+
+func TestDaemon_RetryBackoff(t *testing.T) {
+	ext := &mockFailExt{id: "file:/etc/broken"}
+
+	g := graph.New()
+	g.AddNode(ext)
+
+	d := New(g, &nullPrinter{}, Options{
+		Timeout:         5 * time.Second,
+		Parallel:        1,
+		MaxRetries:      3,
+		RetryBaseDelay:  5 * time.Millisecond,
+		DefaultPollFreq: 10 * time.Millisecond,
+	})
+
+	// Run long enough for retries to exhaust (base 5ms, then 10ms, then noncompliant).
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	d.Run(ctx)
+
+	status := d.Status(ext.ID())
+	if status.Compliance != Noncompliant {
+		t.Errorf("compliance = %v, want Noncompliant", status.Compliance)
+	}
+	if status.RetryCount < 3 {
+		t.Errorf("retryCount = %d, want >= 3", status.RetryCount)
+	}
+}
+
+// mockTransientFailExt fails N times then succeeds, and implements Watcher.
+type mockTransientFailExt struct {
+	id        string
+	failUntil int32
+	callCount atomic.Int32
+	inSync    bool
+}
+
+func (m *mockTransientFailExt) ID() string { return m.id }
+func (m *mockTransientFailExt) Check(_ context.Context) (*extensions.State, error) {
+	return &extensions.State{InSync: m.inSync}, nil
+}
+func (m *mockTransientFailExt) Apply(_ context.Context) (*extensions.Result, error) {
+	n := m.callCount.Add(1)
+	if n <= m.failUntil {
+		return nil, fmt.Errorf("transient failure %d", n)
+	}
+	m.inSync = true
+	return &extensions.Result{Status: extensions.StatusChanged, Changed: true}, nil
+}
+func (m *mockTransientFailExt) String() string { return m.id }
+func (m *mockTransientFailExt) Watch(ctx context.Context, events chan<- extensions.Event) error {
+	// Send periodic events to trigger retries.
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			events <- extensions.Event{
+				ResourceID: m.id,
+				Reason:     "external change",
+				Time:       time.Now(),
+			}
+		}
+	}
+}
+
+func TestDaemon_RetryResetsOnSuccess(t *testing.T) {
+	ext := &mockTransientFailExt{
+		id:        "file:/etc/test",
+		failUntil: 2, // fail first 2 times, succeed on 3rd
+		inSync:    false,
+	}
+
+	g := graph.New()
+	g.AddNode(ext)
+
+	d := New(g, &nullPrinter{}, Options{
+		Timeout:        5 * time.Second,
+		Parallel:       1,
+		MaxRetries:     5,
+		RetryBaseDelay: 5 * time.Millisecond,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	d.Run(ctx)
+
+	status := d.Status(ext.ID())
+	if status.Compliance == Noncompliant {
+		t.Error("should not be noncompliant after successful apply")
 	}
 }
 
