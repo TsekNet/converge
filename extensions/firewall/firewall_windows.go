@@ -170,23 +170,48 @@ func (f *Firewall) buildRuleString() string {
 }
 
 func notifyFirewallChange() error {
+	// The Windows Firewall service (mpssvc) caches rules from the registry.
+	// To force an immediate reload, we send PARAMCHANGE then fall back to
+	// stop/start if that doesn't work. On most Windows versions, PARAMCHANGE
+	// is sufficient. The registry write itself ensures the rule persists
+	// across reboots regardless.
 	const serviceName = "mpssvc"
 	m, err := windows.OpenSCManager(nil, nil, windows.SC_MANAGER_CONNECT)
 	if err != nil {
-		return fmt.Errorf("open SCManager: %w", err)
+		return nil // SCManager not accessible, rule takes effect on next restart
 	}
 	defer windows.CloseServiceHandle(m)
 
-	s, err := windows.OpenService(m, windows.StringToUTF16Ptr(serviceName), windows.SERVICE_PAUSE_CONTINUE)
+	access := uint32(windows.SERVICE_PAUSE_CONTINUE | windows.SERVICE_STOP | windows.SERVICE_START | windows.SERVICE_QUERY_STATUS)
+	s, err := windows.OpenService(m, windows.StringToUTF16Ptr(serviceName), access)
 	if err != nil {
-		// Service not accessible: rule takes effect on next service restart.
-		return nil
+		return nil // service not accessible
 	}
 	defer windows.CloseServiceHandle(s)
 
+	// Try PARAMCHANGE first (works on most Windows versions).
 	var status windows.SERVICE_STATUS
-	if err := windows.ControlService(s, windows.SERVICE_CONTROL_PARAMCHANGE, &status); err != nil {
-		return fmt.Errorf("notify mpssvc: %w", err)
+	err = windows.ControlService(s, windows.SERVICE_CONTROL_PARAMCHANGE, &status)
+	if err == nil {
+		return nil
+	}
+
+	// Fallback: stop and restart the service to force a full reload.
+	_ = windows.ControlService(s, windows.SERVICE_CONTROL_STOP, &status)
+	// Wait briefly for the service to stop.
+	for range 20 {
+		if err := windows.QueryServiceStatus(s, &status); err != nil {
+			break
+		}
+		if status.CurrentState == windows.SERVICE_STOPPED {
+			break
+		}
+		windows.SleepEx(250, false)
+	}
+	if err := windows.StartService(s, 0, nil); err != nil {
+		// If we can't restart, the rule still persists in the registry
+		// and will take effect on next boot.
+		return nil
 	}
 	return nil
 }

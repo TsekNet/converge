@@ -36,7 +36,7 @@ Sleep 500ms
 Enter
 Sleep 6s
 
-Sleep 2s
+Sleep 3s
 
 # Apply: converge and exit
 Type "converge serve baseline --timeout 1s"
