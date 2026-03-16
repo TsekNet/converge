@@ -43,6 +43,7 @@ func (p *TerminalPrinter) Banner(version string) {
 
 func (p *TerminalPrinter) BlueprintHeader(name string) {
 	fmt.Printf(" %s·%s %s%s%s\n", colorDim, colorReset, colorBold, name, colorReset)
+	fmt.Printf("%s────────────────────────────────────────────%s\n", colorDim, colorReset)
 }
 
 func (p *TerminalPrinter) ResourceChecking(ext extensions.Extension, current, total int) {
@@ -97,7 +98,7 @@ func (p *TerminalPrinter) PlanResult(ext extensions.Extension, state *extensions
 func (p *TerminalPrinter) ApplyStart(ext extensions.Extension, current, total int) {
 	resType, resName := splitResource(ext.String())
 	p.printGroupHeader(resType)
-	p.spinner.Start(fmt.Sprintf("%s %s%d/%d%s", resName, colorDim, current, total, colorReset))
+	p.spinner.Start(fmt.Sprintf(" %s %s%d/%d%s", resName, colorDim, current, total, colorReset))
 }
 
 func (p *TerminalPrinter) ApplyResult(ext extensions.Extension, result *extensions.Result) {
@@ -111,6 +112,29 @@ func (p *TerminalPrinter) ApplyResult(ext extensions.Extension, result *extensio
 			colorRed, colorReset, resName, colorDim, dots, dur, colorReset)
 		if result.Err != nil {
 			fmt.Printf("    %s%s%s\n", colorRed, result.Err.Error(), colorReset)
+		}
+		return
+	}
+
+	if result.Changed && len(result.Changes) > 0 {
+		fmt.Printf("  %s~%s %s%s%s%s%s\n",
+			colorYellow, colorReset, resName, colorDim, dots, dur, colorReset)
+		for _, c := range result.Changes {
+			sym, clr := "~", colorYellow
+			if c.Action == "add" {
+				sym, clr = "+", colorGreen
+			} else if c.Action == "remove" {
+				sym, clr = "-", colorRed
+			}
+			if c.From != "" && c.To != "" {
+				fmt.Printf("      %s%s%s %s: %s%s%s → %s%s%s\n",
+					clr, sym, colorReset, c.Property,
+					colorRed, c.From, colorReset,
+					colorGreen, c.To, colorReset)
+			} else if c.To != "" {
+				fmt.Printf("      %s%s%s %s: %s%s%s\n",
+					clr, sym, colorReset, c.Property, clr, c.To, colorReset)
+			}
 		}
 		return
 	}

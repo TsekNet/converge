@@ -107,13 +107,15 @@ func applyOne(ctx context.Context, r extensions.Extension, timeout time.Duration
 		}}
 	}
 
+	changes := state.Changes
+
 	rctx, cancel = withTimeout(ctx, timeout)
 	result, err := r.Apply(rctx)
 	cancel()
 
 	if err != nil {
 		return applyResult{r, &extensions.Result{
-			Status: extensions.StatusFailed, Err: err, Duration: time.Since(start),
+			Status: extensions.StatusFailed, Err: err, Duration: time.Since(start), Changes: changes,
 		}}
 	}
 	if result == nil {
@@ -122,6 +124,7 @@ func applyOne(ctx context.Context, r extensions.Extension, timeout time.Duration
 		}}
 	}
 	result.Duration = time.Since(start)
+	result.Changes = changes
 	return applyResult{r, result}
 }
 

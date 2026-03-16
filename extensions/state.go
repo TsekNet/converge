@@ -44,4 +44,5 @@ type Result struct {
 	Message  string
 	Duration time.Duration
 	Err      error
+	Changes  []Change // drift details from Check (populated by engine for display)
 }
