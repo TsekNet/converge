@@ -15,8 +15,9 @@ import (
 
 // Options controls engine execution behaviour.
 type Options struct {
-	Timeout  time.Duration // per-resource timeout (0 = no timeout)
-	Parallel int           // max concurrent resources (<=1 = sequential)
+	Timeout         time.Duration // per-resource timeout (0 = no timeout)
+	Parallel        int           // max concurrent resources (<=1 = sequential)
+	SuppressSummary bool          // skip the summary line (daemon mode prints its own)
 }
 
 func DefaultOptions() Options {
@@ -224,7 +225,9 @@ func RunApplyDAG(g *graph.Graph, printer output.Printer, opts Options) (int, err
 				failed++
 				if isCritical(ar.ext) {
 					deck.Errorf("critical resource failed: %s", ar.ext.ID())
-					printer.Summary(changed, ok, failed, changed+ok+failed, time.Since(start).Milliseconds())
+					if !opts.SuppressSummary {
+						printer.Summary(changed, ok, failed, changed+ok+failed, time.Since(start).Milliseconds())
+					}
 					return exit.PartialFail, fmt.Errorf("critical resource %s failed", ar.ext.ID())
 				}
 			}
@@ -232,7 +235,9 @@ func RunApplyDAG(g *graph.Graph, printer output.Printer, opts Options) (int, err
 	}
 
 	total := changed + ok + failed
-	printer.Summary(changed, ok, failed, total, time.Since(start).Milliseconds())
+	if !opts.SuppressSummary {
+		printer.Summary(changed, ok, failed, total, time.Since(start).Milliseconds())
+	}
 
 	switch {
 	case total == 0:

@@ -6,6 +6,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -83,14 +84,22 @@ func (d *Daemon) Status(id string) ResourceStatus {
 // is cancelled or --timeout stability window is reached.
 func (d *Daemon) Run(ctx context.Context) error {
 	// Phase 1: initial convergence pass.
+	// In daemon mode (no timeout), suppress the summary since the daemon keeps running.
 	engineOpts := engine.Options{
-		Timeout:  d.opts.Timeout,
-		Parallel: d.opts.Parallel,
+		Timeout:         d.opts.Timeout,
+		Parallel:        d.opts.Parallel,
+		SuppressSummary: d.opts.ConvergedTimeout == 0,
 	}
 	code, err := engine.RunApplyDAG(d.graph, d.printer, engineOpts)
 	if err != nil {
 		deck.Errorf("initial convergence failed (exit %d): %v", code, err)
 		d.initErr = err
+	}
+
+	if d.opts.ConvergedTimeout == 0 {
+		fmt.Printf("%s────────────────────────────────────────────%s\n", "\033[2m", "\033[0m")
+		fmt.Printf("%s%s● WATCHING%s  %sdrift detection active%s\n\n",
+			"\033[1m", "\033[36m", "\033[0m", "\033[2m", "\033[0m")
 	}
 
 	// Phase 2: start watchers/pollers feeding raw events.
