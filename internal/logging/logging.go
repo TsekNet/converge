@@ -9,7 +9,7 @@ import (
 )
 
 // AppID re-exports the app name for platform-specific log init files.
-var AppID = version.App
+var AppID = version.Name
 
 // Init sets up deck logging. Console (stderr) logging only appears in verbose mode
 // to avoid polluting the pretty terminal output. Syslog/eventlog backends are

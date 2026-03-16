@@ -18,7 +18,7 @@ var parallel int
 var detailedExitCodes bool
 
 var rootCmd = &cobra.Command{
-	Use:   version.App,
+	Use:   version.Name,
 	Short: "Desired State Configuration, Compiled",
 	Long:  "Converge manages system state using Go blueprints compiled into a single binary.",
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {

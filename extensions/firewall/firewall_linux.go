@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	tableName = version.App
+	tableName = version.Name
 	chainIn   = "input"
 	chainOut  = "output"
 )

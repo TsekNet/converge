@@ -1,8 +1,8 @@
 package version
 
-// App is the application name. Single source of truth for CLI, logging,
+// Name is the application name. Single source of truth for CLI, logging,
 // firewall rules, and service registration.
-const App = "converge"
+const Name = "converge"
 
 var (
 	Version = "dev"

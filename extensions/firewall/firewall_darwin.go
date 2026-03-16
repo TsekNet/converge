@@ -16,7 +16,7 @@ import (
 
 const (
 	pfConf    = "/etc/pf.conf"
-	pfAnchor  = version.App
+	pfAnchor  = version.Name
 	anchorDir = "/etc/pf.anchors"
 )
 
