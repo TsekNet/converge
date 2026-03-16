@@ -31,8 +31,8 @@ We manage 500K+ endpoints across macOS, Windows, and Linux. Every mainstream too
 | Tool | Runtime Required | Language | State Model |
 |-----------|-----------------|----------|-------------|
 | Chef/Cinc | Ruby + gem deps | Ruby DSL | Converge-on-run (server or zero-agent) |
-| Puppet | JVM + Ruby | Puppet DSL | Catalog compiled on server |
-| Ansible | Python 2/3 | YAML + Jinja2 | Push-based, no local agent |
+| Puppet | Ruby (agent); JVM/JRuby (Puppet Server) | Puppet DSL | Catalog compiled locally (`puppet apply`) or on server (agent mode) |
+| Ansible | Python 2/3 | YAML + Jinja2 | Push-based; `ansible-pull` enables cron/pull but is not the standard model |
 | Terraform | None (binary) | HCL | State file (remote or local) |
 | Salt | Python | YAML + Jinja2 | Converge-on-run or push |
 
@@ -270,6 +270,7 @@ flowchart TD
 
 **Key behaviors:**
 
+- **Condition gates.** Resources with a `Condition` set in `ResourceMeta` are skipped until the condition is met. The daemon waits using OS-native events (netlink, inotify, NotifyIpInterfaceChange) and triggers initial convergence the moment the condition becomes true. See the `condition` package.
 - **Event-driven, not polling.** Resources implementing `Watcher` (File via inotify, Service via dbus) block on OS-level events. Near-zero CPU at idle.
 - **DAG propagation.** When a resource changes, its downstream dependents in the DAG are automatically re-checked. This is what Chef, Puppet, and Ansible lack entirely.
 - **Polling fallback.** Resources without native OS events (Package, Exec) are polled at configurable intervals.
@@ -388,7 +389,7 @@ These are real bugs, outages, and hours lost managing endpoints with Chef at sca
 | Regex file mutations | `Chef::Util::FileEdit` with fragile regexes | Declarative file content, atomic writes |
 | Inconsistent error handling | Default failure behavior varies by provider (raise vs. warn vs. silent return); `ignore_failure` is available on every resource but requires opting in explicitly | `Critical` flag on every resource; failure behavior is uniform by default |
 | Monolithic recipes | `include_recipe` and custom resource partials exist but are separate concepts with separate lookup paths; LWRP boilerplate raises the cost of decomposition | `Include()` is a plain Go function call; no boilerplate, no separate file lookup |
-| No real unit testing | ChefSpec tests collections, not behavior; Test Kitchen takes 45 min | `go test` with mock Run, subsecond feedback |
+| No real unit testing | ChefSpec tests the compiled resource collection, not converged system state (that is InSpec's role); Test Kitchen integration tests take long to run | `go test` with mock Run, subsecond feedback |
 
 ---
 
@@ -402,3 +403,28 @@ What converge does **not** do:
 - **Fleet-wide orchestration.** No rolling deploys, blue-green, or traffic shifting across hosts. Converge manages per-host state. Use `r.InShard()` for percentage-based canary rollouts within a fleet.
 - **Dashboards and alerting.** `converge serve` detects and fixes drift in real-time, but doesn't provide observability UI. Pair with Fleet/osquery/Prometheus.
 - **Package hosting.** It installs packages but doesn't host them.
+
+---
+
+## Immutable Infrastructure and Converge
+
+Immutable infrastructure (NixOS, OSTree, image-based macOS MDM, golden VM images built with Packer) is a legitimate and increasingly popular approach: bake configuration into the image, redeploy rather than mutate. For servers and containers this model works well.
+
+Converge is complementary to immutable images, not a replacement for them. The same blueprint runs in both phases:
+
+1. **Image build (Packer, cloud-init, OS deployment):** Run `converge serve --timeout 30s` as a provisioner step. Converge applies the full blueprint once and exits when the system is stable. The hardened, configured state is baked into the image.
+2. **Running system:** The same binary runs as a daemon. Any drift from the baked state, whether from a user change, an in-place OS update reverting a setting, or a sysadmin editing a file directly, is detected and corrected in under a second.
+
+One blueprint, two modes, zero duplication between image build and runtime enforcement.
+
+Endpoints are not servers:
+
+| Constraint | Servers/Containers | Endpoints (macOS, Windows, Linux workstations) |
+|---|---|---|
+| Can redeploy to fix drift | Yes: replace the container or VM | Rarely: reimaging disrupts the user |
+| User-installed software | No: image is immutable | Yes: users install things; drift is expected |
+| Hardware-tied state | No | Yes: local certificates, TPM-bound keys, per-device enrollment |
+| OS update model | Replace image | In-place upgrade (Windows Update, macOS, apt) |
+| Persona/profile | Stateless | Stateful: home dir, preferences, enrolled identities |
+
+Even with an immutable OS base, endpoints accumulate mutable state after first boot. Converge detects and corrects that drift without requiring a reimaging cycle.

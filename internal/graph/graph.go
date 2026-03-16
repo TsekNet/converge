@@ -14,11 +14,12 @@ import (
 
 // NodeMeta holds per-resource meta overrides set by the DSL.
 type NodeMeta struct {
-	Noop      bool    // skip Apply, only Check (per-resource dry-run)
-	Retry     int     // per-resource max retries (0 = use daemon default)
-	Limit     float64 // per-resource rate limit (0 = use daemon default)
-	AutoEdge  *bool   // nil = enabled (default), false = disable auto-edges
-	AutoGroup *bool   // nil = enabled (default), false = disable auto-grouping
+	Noop      bool                 // skip Apply, only Check (per-resource dry-run)
+	Retry     int                  // per-resource max retries (0 = use daemon default)
+	Limit     float64              // per-resource rate limit (0 = use daemon default)
+	AutoEdge  *bool                // nil = enabled (default), false = disable auto-edges
+	AutoGroup *bool                // nil = enabled (default), false = disable auto-grouping
+	Condition extensions.Condition // nil = no gate; non-nil = skip until condition is met
 }
 
 // Node wraps an Extension with DAG metadata.
