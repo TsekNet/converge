@@ -342,9 +342,13 @@ These are real bugs, outages, and hours lost managing endpoints with Chef at sca
 
 ---
 
-## What Converge Is Not
+## Scope
 
-- **Not a provisioning tool.** Use Terraform for VMs, networks, cloud resources.
-- **Not a deployment tool.** No rolling deploys or blue-green. Percentage-based canary rollouts are supported via `r.InShard()`.
-- **Not a monitoring tool.** `converge serve` detects and fixes drift in real-time, but doesn't provide dashboards or alerting. Pair with Fleet/osquery/Prometheus for observability.
-- **Not a package repository.** It installs packages but doesn't host them.
+Converge manages everything on the endpoint: packages, services, files, users, firewall rules, registry keys, kernel parameters, audit policies. With `converge serve`, it continuously enforces desired state via event-driven drift detection.
+
+What converge does **not** do:
+
+- **Cloud infrastructure.** VMs, VPCs, load balancers, DNS records: use Terraform. Converge operates *on* the endpoint, not *above* it.
+- **Fleet-wide orchestration.** No rolling deploys, blue-green, or traffic shifting across hosts. Converge manages per-host state. Use `r.InShard()` for percentage-based canary rollouts within a fleet.
+- **Dashboards and alerting.** `converge serve` detects and fixes drift in real-time, but doesn't provide observability UI. Pair with Fleet/osquery/Prometheus.
+- **Package hosting.** It installs packages but doesn't host them.
