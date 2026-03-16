@@ -234,6 +234,9 @@ sudo converge serve baseline --once --detailed-exit-codes
 
 # Packer provisioner
 sudo converge serve cis --once
+
+# Packer: converge and exit after 60s of stability
+sudo converge serve baseline --timeout 60s
 ```
 
 ---
@@ -287,14 +290,23 @@ No containers, no VMs, no network calls.
 
 ## Resource Reference
 
-All option structs share these common fields:
+All option structs share these common fields via `dsl.ResourceMeta`:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `Critical` | `bool` | `true` | If `true`, failure aborts the run. Set `false` for best-effort. |
-| `DependsOn` | `[]string` | `nil` | Explicit resource IDs this resource depends on (e.g. `[]string{"package:nginx"}`). Complements auto-edges. |
+| `DependsOn` | `[]string` | `nil` | Explicit resource IDs this resource depends on. Complements auto-edges. |
+| `Noop` | `bool` | `false` | Per-resource dry-run: Check only, skip Apply. |
+| `Retry` | `int` | `0` | Per-resource max retries. 0 = use daemon default (--max-retries). |
+| `Limit` | `float64` | `0` | Per-resource rate limit (events/sec). 0 = use daemon default. |
+| `AutoEdge` | `*bool` | `nil` | Set to `ptrFalse` to disable auto-edges for this resource. |
+| `AutoGroup` | `*bool` | `nil` | Set to `ptrFalse` to disable auto-grouping for this resource. |
 
-**Auto-edges:** Dependencies are also detected automatically: `service:X` depends on `package:X`, files depend on parent directory files, and services depend on config files containing their name. Use `DependsOn` for dependencies auto-edges cannot detect:
+**Auto-edges:** Dependencies are detected automatically: `service:X` depends on `package:X`, files depend on parent directories, services depend on config files. Use `DependsOn` for dependencies auto-edges cannot detect.
+
+**Auto-grouping:** Package resources with the same manager and state are automatically batched into a single install/remove transaction (e.g., `apt install git curl neovim` instead of three separate calls). Set `AutoGroup: ptrFalse` on a package to opt out.
+
+Use `DependsOn` for dependencies auto-edges cannot detect:
 
 ```go
 r.Exec("migrate", dsl.ExecOpts{

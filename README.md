@@ -65,7 +65,7 @@ sudo converge serve baseline --once  # converge once and exit (CI/Packer)
 ```bash
 converge plan baseline --out=json             # machine-readable output (also: serial)
 converge serve baseline --parallel 4          # concurrent initial convergence
-converge serve baseline --timeout 2m          # per-resource timeout
+converge serve baseline --resource-timeout 2m  # per-resource timeout
 converge serve baseline --max-retries 5       # retries before marking noncompliant
 converge plan baseline --detailed-exit-codes  # granular exit codes for CI
 ```

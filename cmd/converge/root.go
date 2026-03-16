@@ -28,7 +28,7 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.PersistentFlags().StringVar(&outputFormat, "out", "terminal", "output format: terminal, serial, json")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "detailed output")
-	rootCmd.PersistentFlags().DurationVar(&timeout, "timeout", 5*time.Minute, "per-resource timeout")
+	rootCmd.PersistentFlags().DurationVar(&timeout, "resource-timeout", 5*time.Minute, "per-resource timeout for Check/Apply cycles")
 	rootCmd.PersistentFlags().IntVar(&parallel, "parallel", 1, "max concurrent resources (1 = sequential)")
 	rootCmd.PersistentFlags().BoolVar(&detailedExitCodes, "detailed-exit-codes", false, "use granular exit codes (2=changed, 3=partial, 4=all failed, 5=pending)")
 }

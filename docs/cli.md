@@ -20,6 +20,7 @@ Builds a DAG of all resources, performs initial convergence, then starts per-res
 |------|---------|-------------|
 | `--once` | `false` | Exit after initial convergence (CI/Packer mode) |
 | `--max-retries` | `3` | Max retries before marking a resource noncompliant |
+| `--timeout` | `0` | Exit after system is stable for this duration (e.g. `60s`). 0 = run forever. |
 
 Requires root (exit 10 if not).
 
@@ -75,7 +76,7 @@ converge version
 |------|-------|---------|-------------|
 | `--out` | | `terminal` | Output format (see below) |
 | `--verbose` | `-v` | `false` | Show deck log output on stderr (also logged to syslog/eventlog) |
-| `--timeout` | | `5m` | Per-resource timeout for Check/Apply cycles |
+| `--resource-timeout` | | `5m` | Per-resource timeout for Check/Apply cycles |
 | `--parallel` | | `1` | Max concurrent resources within each DAG layer (1 = sequential) |
 | `--detailed-exit-codes` | | `false` | Use granular exit codes (see below) |
 
@@ -180,7 +181,7 @@ sudo converge serve baseline --once
 converge plan baseline --out=json | jq '.resources[] | select(.status == "pending")'
 
 # Parallel with timeout
-sudo converge serve baseline --parallel=4 --timeout=2m
+sudo converge serve baseline --parallel=4 --resource-timeout=2m
 
 # Custom retry limit
 sudo converge serve baseline --max-retries=5

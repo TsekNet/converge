@@ -61,7 +61,7 @@ var serveCmd = &cobra.Command{
 func init() {
 	serveCmd.Flags().BoolVar(&once, "once", false, "exit after initial convergence (CI/Packer mode)")
 	serveCmd.Flags().IntVar(&maxRetries, "max-retries", 3, "max retries before marking a resource noncompliant")
-	serveCmd.Flags().DurationVar(&convergedTimeout, "converged-timeout", 0, "exit after system is stable for this duration (0 = run forever)")
+	serveCmd.Flags().DurationVar(&convergedTimeout, "timeout", 0, "exit after system is stable for this duration (0 = run forever)")
 	rootCmd.AddCommand(serveCmd)
 }
 
