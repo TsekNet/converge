@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/TsekNet/converge/extensions"
+	"github.com/TsekNet/converge/internal/exit"
 	"github.com/TsekNet/converge/internal/graph"
 	"github.com/TsekNet/converge/internal/output"
 	"github.com/google/deck"
@@ -60,7 +61,7 @@ func RunPlan(resources []extensions.Extension, printer output.Printer, opts Opti
 
 		if err != nil {
 			printer.Error(r, err)
-			return 1, fmt.Errorf("check failed for %s: %w", r.ID(), err)
+			return exit.Error, fmt.Errorf("check failed for %s: %w", r.ID(), err)
 		}
 		if state == nil {
 			state = &extensions.State{}
@@ -76,9 +77,9 @@ func RunPlan(resources []extensions.Extension, printer output.Printer, opts Opti
 
 	printer.PlanSummary(pending, ok, len(resources))
 	if pending > 0 {
-		return 5, nil
+		return exit.Pending, nil
 	}
-	return 0, nil
+	return exit.OK, nil
 }
 
 type applyResult struct {
@@ -170,7 +171,7 @@ func RunApply(resources []extensions.Extension, printer output.Printer, opts Opt
 			if isCritical(ar.ext) {
 				deck.Errorf("critical resource failed: %s", ar.ext.ID())
 				printer.Summary(changed, ok, failed, changed+ok+failed, time.Since(start).Milliseconds())
-				return 3, fmt.Errorf("critical resource %s failed", ar.ext.ID())
+				return exit.PartialFail, fmt.Errorf("critical resource %s failed", ar.ext.ID())
 			}
 		}
 	}
@@ -180,15 +181,15 @@ func RunApply(resources []extensions.Extension, printer output.Printer, opts Opt
 
 	switch {
 	case total == 0:
-		return 0, nil
+		return exit.OK, nil
 	case failed == total:
-		return 4, nil
+		return exit.AllFailed, nil
 	case failed > 0:
-		return 3, nil
+		return exit.PartialFail, nil
 	case changed > 0:
-		return 2, nil
+		return exit.Changed, nil
 	default:
-		return 0, nil
+		return exit.OK, nil
 	}
 }
 
@@ -212,7 +213,7 @@ func setMaxNameLen(resources []extensions.Extension, printer output.Printer) {
 func RunPlanDAG(g *graph.Graph, printer output.Printer, opts Options) (int, error) {
 	layers, err := g.TopologicalLayers()
 	if err != nil {
-		return 1, fmt.Errorf("building execution order: %w", err)
+		return exit.Error, fmt.Errorf("building execution order: %w", err)
 	}
 
 	// Flatten for total count and name alignment.
@@ -230,7 +231,7 @@ func RunPlanDAG(g *graph.Graph, printer output.Printer, opts Options) (int, erro
 func RunApplyDAG(g *graph.Graph, printer output.Printer, opts Options) (int, error) {
 	layers, err := g.TopologicalLayers()
 	if err != nil {
-		return 1, fmt.Errorf("building execution order: %w", err)
+		return exit.Error, fmt.Errorf("building execution order: %w", err)
 	}
 
 	// Flatten for total count and name alignment.
@@ -283,7 +284,7 @@ func RunApplyDAG(g *graph.Graph, printer output.Printer, opts Options) (int, err
 				if isCritical(ar.ext) {
 					deck.Errorf("critical resource failed: %s", ar.ext.ID())
 					printer.Summary(changed, ok, failed, changed+ok+failed, time.Since(start).Milliseconds())
-					return 3, fmt.Errorf("critical resource %s failed", ar.ext.ID())
+					return exit.PartialFail, fmt.Errorf("critical resource %s failed", ar.ext.ID())
 				}
 			}
 		}
@@ -294,14 +295,14 @@ func RunApplyDAG(g *graph.Graph, printer output.Printer, opts Options) (int, err
 
 	switch {
 	case total == 0:
-		return 0, nil
+		return exit.OK, nil
 	case failed == total:
-		return 4, nil
+		return exit.AllFailed, nil
 	case failed > 0:
-		return 3, nil
+		return exit.PartialFail, nil
 	case changed > 0:
-		return 2, nil
+		return exit.Changed, nil
 	default:
-		return 0, nil
+		return exit.OK, nil
 	}
 }

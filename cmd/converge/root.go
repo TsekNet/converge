@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/TsekNet/converge/internal/exit"
 	"github.com/TsekNet/converge/internal/logging"
 	"github.com/spf13/cobra"
 )
@@ -46,7 +47,7 @@ func simplifyExit(code int) int {
 		return code
 	}
 	switch code {
-	case 0, 2, 5:
+	case exit.OK, exit.Changed, exit.Pending:
 		return 0
 	default:
 		return 1

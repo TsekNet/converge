@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/TsekNet/converge/internal/engine"
+	"github.com/TsekNet/converge/internal/exit"
 	"github.com/TsekNet/converge/internal/graph"
 	"github.com/TsekNet/converge/internal/graph/autoedge"
 	"github.com/TsekNet/converge/internal/output"
@@ -96,25 +97,25 @@ func (a *App) BuildGraph(name string) (*graph.Graph, error) {
 
 func (a *App) RunPlan(name string, printer output.Printer) (int, error) {
 	if _, ok := a.blueprints[name]; !ok {
-		return 11, fmt.Errorf("blueprint %q not found", name)
+		return exit.NotFound, fmt.Errorf("blueprint %q not found", name)
 	}
 	g, err := a.BuildGraph(name)
 	if err != nil {
-		return 1, err
+		return exit.Error, err
 	}
 	return engine.RunPlanDAG(g, printer, a.EngineOpts)
 }
 
 func (a *App) RunApply(name string, printer output.Printer) (int, error) {
 	if _, ok := a.blueprints[name]; !ok {
-		return 11, fmt.Errorf("blueprint %q not found", name)
+		return exit.NotFound, fmt.Errorf("blueprint %q not found", name)
 	}
 	if !isRoot() {
-		return 10, fmt.Errorf("converge apply requires root/administrator privileges")
+		return exit.NotRoot, fmt.Errorf("converge apply requires root/administrator privileges")
 	}
 	g, err := a.BuildGraph(name)
 	if err != nil {
-		return 1, err
+		return exit.Error, err
 	}
 	return engine.RunApplyDAG(g, printer, a.EngineOpts)
 }
