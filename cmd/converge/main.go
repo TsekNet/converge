@@ -20,7 +20,6 @@ func main() {
 func newApp() *dsl.App {
 	a := dsl.New()
 	a.Register("baseline", "Cross-platform baseline for all managed hosts", blueprints.Baseline)
-	a.Register("undo", "Remove baseline changes (testing only)", blueprints.Undo)
 	a.Register("linux", "Common Linux system baseline", blueprints.Linux)
 	a.Register("linux_server", "Hardened Linux server", blueprints.LinuxServer)
 	a.Register("darwin", "macOS configuration", blueprints.Darwin)
