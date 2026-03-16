@@ -16,7 +16,7 @@
 
 </div>
 
-*converge* is a Directive Acyclic Graph (DAG)-native configuration management daemon for Linux, macOS, and Windows. It watches for drift via OS-level events (inotify, dbus, registry notifications), detects changes in under a second, and re-converges only the affected resources and their dependents. Write blueprints in Go, get compile-time type safety, and ship a ~3.5 MB static binary with no interpreters, agents, or runtime dependencies.
+*converge* keeps your machines configured the way you want them. Define packages, files, services, and firewall rules in Go, and converge continuously enforces that state across Linux, macOS, and Windows. If something drifts, converge detects it instantly and fixes it: no cron jobs, no polling, no 30-minute blind spots.
 
 > **Disclaimer:** This was created as a fun side project (PoC), not affiliated with any company.
 
