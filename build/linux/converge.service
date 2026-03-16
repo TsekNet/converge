@@ -1,0 +1,27 @@
+[Unit]
+Description=Converge desired-state configuration daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/converge serve workstation
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Hardening
+ProtectSystem=full
+ProtectHome=read-only
+NoNewPrivileges=no
+PrivateTmp=yes
+
+# Logging: journalctl -u converge
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=converge
+
+[Install]
+WantedBy=multi-user.target

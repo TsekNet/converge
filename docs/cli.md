@@ -106,6 +106,53 @@ Defined in `internal/exit/exit.go`. By default, converge exits 0 on success and 
 
 ---
 
+## Service Installation
+
+Converge runs as a system service on all platforms. Packages install and start the service automatically.
+
+### Linux (systemd)
+
+```bash
+sudo dpkg -i converge.deb           # installs, enables, and starts
+sudo systemctl status converge       # check status
+sudo journalctl -u converge -f       # follow logs
+sudo systemctl restart converge      # restart after binary update
+```
+
+Service file: `/usr/lib/systemd/system/converge.service`
+
+### macOS (launchd)
+
+```bash
+sudo installer -pkg converge.pkg -target /  # installs and starts
+sudo launchctl list | grep converge          # check status
+tail -f /var/log/converge.log                # follow logs
+```
+
+Plist: `/Library/LaunchDaemons/com.tseknet.converge.plist`
+
+### Windows (SCM)
+
+The MSI installer registers and starts the `converge` Windows service automatically.
+
+```powershell
+Get-Service converge                 # check status
+Restart-Service converge             # restart after binary update
+Get-EventLog -LogName Application -Source converge  # view logs
+```
+
+### Upgrades
+
+Replace the binary via your package manager. The service manager restarts converge automatically:
+
+| Platform | Upgrade command | Restart |
+|---|---|---|
+| Linux | `sudo dpkg -i converge.deb` | postinst runs `systemctl restart` |
+| macOS | `sudo installer -pkg converge.pkg -target /` | postinstall runs `launchctl bootstrap` |
+| Windows | Run new `converge.msi` | MSI stops/starts the service |
+
+---
+
 ## Environment Variables
 
 | Variable | Description |

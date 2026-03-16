@@ -51,11 +51,11 @@ sudo converge serve workstation --once  # converge once and exit (CI/Packer)
 **3. Flags:**
 
 ```bash
-converge plan my-server --out=json             # machine-readable output (also: serial)
-converge serve my-server --parallel 4          # concurrent initial convergence
-converge serve my-server --timeout 2m          # per-resource timeout
-converge serve my-server --max-retries 5       # retries before marking noncompliant
-converge plan my-server --detailed-exit-codes  # granular exit codes for CI
+converge plan workstation --out=json             # machine-readable output (also: serial)
+converge serve workstation --parallel 4          # concurrent initial convergence
+converge serve workstation --timeout 2m          # per-resource timeout
+converge serve workstation --max-retries 5       # retries before marking noncompliant
+converge plan workstation --detailed-exit-codes  # granular exit codes for CI
 ```
 
 ## Features
