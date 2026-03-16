@@ -10,7 +10,6 @@ import (
 	"fmt"
 
 	"github.com/TsekNet/converge/extensions"
-	"github.com/heimdalr/dag"
 )
 
 // Node wraps an Extension with DAG metadata.
@@ -18,29 +17,24 @@ type Node struct {
 	Ext extensions.Extension
 }
 
-// ID implements dag.IDInterface for the heimdalr/dag library.
-func (n *Node) ID() string {
-	return n.Ext.ID()
-}
-
 // Graph holds all resource nodes and their dependency edges.
 // In-degree and adjacency are tracked incrementally for O(V+E)
-// topological sorting, avoiding per-node parent queries.
+// topological sorting.
 type Graph struct {
-	d        *dag.DAG
 	nodes    map[string]*Node
 	order    []string            // insertion order for deterministic iteration
 	inDegree map[string]int      // number of dependencies per node
 	children map[string][]string // children[id] = nodes that depend on id
+	parents  map[string][]string // parents[id] = nodes that id depends on (for cycle detection)
 }
 
 // New creates an empty resource graph.
 func New() *Graph {
 	return &Graph{
-		d:        dag.NewDAG(),
 		nodes:    make(map[string]*Node),
 		inDegree: make(map[string]int),
 		children: make(map[string][]string),
+		parents:  make(map[string][]string),
 	}
 }
 
@@ -52,17 +46,14 @@ func (g *Graph) AddNode(ext extensions.Extension) error {
 		return fmt.Errorf("duplicate resource: %s", id)
 	}
 
-	node := &Node{Ext: ext}
-	g.nodes[id] = node
+	g.nodes[id] = &Node{Ext: ext}
 	g.order = append(g.order, id)
 	g.inDegree[id] = 0
-	g.d.AddVertexByID(id, node)
 	return nil
 }
 
 // AddEdge declares that fromID depends on toID (toID must run before fromID).
 // Returns an error if either node is missing or the edge would create a cycle.
-// Internally, heimdalr/dag uses parent->child direction, so we pass (toID, fromID).
 func (g *Graph) AddEdge(fromID, toID string) error {
 	if _, ok := g.nodes[fromID]; !ok {
 		return fmt.Errorf("resource %q not found", fromID)
@@ -70,13 +61,40 @@ func (g *Graph) AddEdge(fromID, toID string) error {
 	if _, ok := g.nodes[toID]; !ok {
 		return fmt.Errorf("resource %q not found", toID)
 	}
-	if err := g.d.AddEdge(toID, fromID); err != nil {
-		return err
+	if fromID == toID {
+		return fmt.Errorf("self-dependency: %s", fromID)
 	}
-	// Track incrementally for O(V+E) topological sort.
+
+	// Check if adding this edge would create a cycle:
+	// toID depends on fromID (transitively) -> cycle.
+	if g.reaches(toID, fromID) {
+		return fmt.Errorf("edge %s -> %s would create a cycle", fromID, toID)
+	}
+
 	g.inDegree[fromID]++
 	g.children[toID] = append(g.children[toID], fromID)
+	g.parents[fromID] = append(g.parents[fromID], toID)
 	return nil
+}
+
+// reaches returns true if `from` can reach `to` by following dependency edges.
+// Used for cycle detection before adding a new edge.
+func (g *Graph) reaches(from, to string) bool {
+	visited := make(map[string]bool, len(g.nodes))
+	stack := []string{from}
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if cur == to {
+			return true
+		}
+		if visited[cur] {
+			continue
+		}
+		visited[cur] = true
+		stack = append(stack, g.parents[cur]...)
+	}
+	return false
 }
 
 // Node returns the node with the given ID, or nil if not found.
@@ -86,11 +104,16 @@ func (g *Graph) Node(id string) *Node {
 
 // Nodes returns all nodes in the graph (unordered).
 func (g *Graph) Nodes() []*Node {
-	out := make([]*Node, 0, len(g.nodes))
-	for _, n := range g.nodes {
-		out = append(out, n)
+	out := make([]string, 0, len(g.nodes))
+	for id := range g.nodes {
+		out = append(out, id)
 	}
-	return out
+	// Use insertion order for deterministic iteration.
+	result := make([]*Node, 0, len(g.order))
+	for _, id := range g.order {
+		result = append(result, g.nodes[id])
+	}
+	return result
 }
 
 // OrderedExtensions returns extensions in insertion order.
@@ -132,7 +155,6 @@ func (g *Graph) TopologicalLayers() ([][]extensions.Extension, error) {
 		deg[id] = d
 	}
 
-	// Seed queue with zero-dependency nodes.
 	queue := make([]string, 0, len(g.nodes))
 	for id, d := range deg {
 		if d == 0 {
