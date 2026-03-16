@@ -386,7 +386,7 @@ These are real bugs, outages, and hours lost managing endpoints with Chef at sca
 | Cross-cookbook file conflicts | Last recipe wins, no warning | Duplicate resource declarations are build errors |
 | Type coercion | `"0"` is truthy in Ruby | `bool` is `bool`, compiler enforces types |
 | Regex file mutations | `Chef::Util::FileEdit` with fragile regexes | Declarative file content, atomic writes |
-| Inconsistent error handling | Some resources raise, some warn, some silently return | `Critical` flag: explicit per resource |
+| Inconsistent error handling | Behavior varies by resource provider: some raise, some warn, some silently return; `ignore_failure` suppresses per-resource but the contract is undocumented | `Critical` flag: explicit, uniform, documented per resource |
 | Monolithic recipes | 573-line recipes, LWRP boilerplate discourages decomposition | `Include()` is a Go function call, zero boilerplate |
 | No real unit testing | ChefSpec tests collections, not behavior; Test Kitchen takes 45 min | `go test` with mock Run, subsecond feedback |
 
