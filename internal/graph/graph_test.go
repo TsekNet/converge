@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/TsekNet/converge/extensions"
@@ -226,6 +227,46 @@ func TestOrderedExtensions(t *testing.T) {
 	}
 	if exts[0].ID() != "a" || exts[1].ID() != "b" {
 		t.Errorf("wrong order: got [%s, %s], want [a, b]", exts[0].ID(), exts[1].ID())
+	}
+}
+
+func BenchmarkTopologicalLayers_2000(b *testing.B) {
+	// 2000 nodes in a linear chain: 0 -> 1 -> 2 -> ... -> 1999.
+	g := New()
+	for i := 0; i < 2000; i++ {
+		id := fmt.Sprintf("resource:%d", i)
+		g.AddNode(mock(id, id))
+	}
+	for i := 1; i < 2000; i++ {
+		from := fmt.Sprintf("resource:%d", i)
+		to := fmt.Sprintf("resource:%d", i-1)
+		g.AddEdge(from, to)
+	}
+
+	b.ResetTimer()
+	for range b.N {
+		g.TopologicalLayers()
+	}
+}
+
+func BenchmarkTopologicalLayers_2000_Wide(b *testing.B) {
+	// 2000 nodes with 10 layers of 200, each depending on all nodes in the previous layer.
+	g := New()
+	for i := 0; i < 2000; i++ {
+		id := fmt.Sprintf("resource:%d", i)
+		g.AddNode(mock(id, id))
+	}
+	for layer := 1; layer < 10; layer++ {
+		for i := 0; i < 200; i++ {
+			from := fmt.Sprintf("resource:%d", layer*200+i)
+			to := fmt.Sprintf("resource:%d", (layer-1)*200) // depend on first node in prev layer
+			g.AddEdge(from, to)
+		}
+	}
+
+	b.ResetTimer()
+	for range b.N {
+		g.TopologicalLayers()
 	}
 }
 

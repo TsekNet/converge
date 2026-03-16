@@ -1,6 +1,9 @@
 // Package graph provides a directed acyclic graph (DAG) of converge resources.
 // Resources are vertices, dependency relationships are edges. The graph
 // supports topological layer computation for parallel execution.
+//
+// Edge direction: AddEdge(fromID, toID) means fromID depends on toID.
+// toID must complete before fromID starts.
 package graph
 
 import (
@@ -21,17 +24,23 @@ func (n *Node) ID() string {
 }
 
 // Graph holds all resource nodes and their dependency edges.
+// In-degree and adjacency are tracked incrementally for O(V+E)
+// topological sorting, avoiding per-node parent queries.
 type Graph struct {
-	d     *dag.DAG
-	nodes map[string]*Node
-	order []string // insertion order for deterministic iteration
+	d        *dag.DAG
+	nodes    map[string]*Node
+	order    []string            // insertion order for deterministic iteration
+	inDegree map[string]int      // number of dependencies per node
+	children map[string][]string // children[id] = nodes that depend on id
 }
 
 // New creates an empty resource graph.
 func New() *Graph {
 	return &Graph{
-		d:     dag.NewDAG(),
-		nodes: make(map[string]*Node),
+		d:        dag.NewDAG(),
+		nodes:    make(map[string]*Node),
+		inDegree: make(map[string]int),
+		children: make(map[string][]string),
 	}
 }
 
@@ -46,13 +55,14 @@ func (g *Graph) AddNode(ext extensions.Extension) error {
 	node := &Node{Ext: ext}
 	g.nodes[id] = node
 	g.order = append(g.order, id)
+	g.inDegree[id] = 0
 	g.d.AddVertexByID(id, node)
 	return nil
 }
 
-// AddEdge declares that the resource identified by fromID depends on the
-// resource identified by toID (toID must run before fromID). Returns an
-// error if either node is missing or the edge would create a cycle.
+// AddEdge declares that fromID depends on toID (toID must run before fromID).
+// Returns an error if either node is missing or the edge would create a cycle.
+// Internally, heimdalr/dag uses parent->child direction, so we pass (toID, fromID).
 func (g *Graph) AddEdge(fromID, toID string) error {
 	if _, ok := g.nodes[fromID]; !ok {
 		return fmt.Errorf("resource %q not found", fromID)
@@ -60,7 +70,13 @@ func (g *Graph) AddEdge(fromID, toID string) error {
 	if _, ok := g.nodes[toID]; !ok {
 		return fmt.Errorf("resource %q not found", toID)
 	}
-	return g.d.AddEdge(toID, fromID)
+	if err := g.d.AddEdge(toID, fromID); err != nil {
+		return err
+	}
+	// Track incrementally for O(V+E) topological sort.
+	g.inDegree[fromID]++
+	g.children[toID] = append(g.children[toID], fromID)
+	return nil
 }
 
 // Node returns the node with the given ID, or nil if not found.
@@ -103,41 +119,29 @@ func (g *Graph) Flatten() ([]extensions.Extension, error) {
 // Layer 0 contains resources with no dependencies. Layer N contains
 // resources whose dependencies are all in layers < N. Resources within
 // the same layer are independent and can run concurrently.
+//
+// Runs in O(V+E) using Kahn's algorithm with pre-computed in-degree.
 func (g *Graph) TopologicalLayers() ([][]extensions.Extension, error) {
 	if len(g.nodes) == 0 {
 		return nil, nil
 	}
 
-	// Compute in-degree for each node.
-	inDegree := make(map[string]int, len(g.nodes))
-	// children[id] = list of nodes that depend on id (id must run first).
-	children := make(map[string][]string, len(g.nodes))
-
-	for id := range g.nodes {
-		inDegree[id] = 0
+	// Copy in-degree map (modified during sort).
+	deg := make(map[string]int, len(g.nodes))
+	for id, d := range g.inDegree {
+		deg[id] = d
 	}
 
-	// For each node, find its parents (dependencies).
-	for id := range g.nodes {
-		parents, err := g.d.GetParents(id)
-		if err != nil {
-			return nil, fmt.Errorf("getting parents of %s: %w", id, err)
-		}
-		inDegree[id] = len(parents)
-		for pid := range parents {
-			children[pid] = append(children[pid], id)
+	// Seed queue with zero-dependency nodes.
+	queue := make([]string, 0, len(g.nodes))
+	for id, d := range deg {
+		if d == 0 {
+			queue = append(queue, id)
 		}
 	}
 
 	var layers [][]extensions.Extension
-
-	// BFS by layers (Kahn's algorithm variant).
-	queue := make([]string, 0)
-	for id, deg := range inDegree {
-		if deg == 0 {
-			queue = append(queue, id)
-		}
-	}
+	placed := 0
 
 	for len(queue) > 0 {
 		layer := make([]extensions.Extension, 0, len(queue))
@@ -145,9 +149,10 @@ func (g *Graph) TopologicalLayers() ([][]extensions.Extension, error) {
 
 		for _, id := range queue {
 			layer = append(layer, g.nodes[id].Ext)
-			for _, child := range children[id] {
-				inDegree[child]--
-				if inDegree[child] == 0 {
+			placed++
+			for _, child := range g.children[id] {
+				deg[child]--
+				if deg[child] == 0 {
 					nextQueue = append(nextQueue, child)
 				}
 			}
@@ -157,11 +162,6 @@ func (g *Graph) TopologicalLayers() ([][]extensions.Extension, error) {
 		queue = nextQueue
 	}
 
-	// Sanity check: all nodes should be placed.
-	placed := 0
-	for _, l := range layers {
-		placed += len(l)
-	}
 	if placed != len(g.nodes) {
 		return nil, fmt.Errorf("cycle detected: placed %d of %d nodes", placed, len(g.nodes))
 	}
