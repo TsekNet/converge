@@ -32,7 +32,12 @@ func Baseline(r *dsl.Run) {
 	}
 
 	if p.OS == "linux" {
-		r.Service("sshd", dsl.ServiceOpts{
+		// Debian/Ubuntu use "ssh", RHEL/Fedora use "sshd".
+		sshService := "sshd"
+		if p.Distro == "ubuntu" || p.Distro == "debian" {
+			sshService = "ssh"
+		}
+		r.Service(sshService, dsl.ServiceOpts{
 			State:  dsl.Running,
 			Enable: true,
 		})
