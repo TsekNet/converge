@@ -7,6 +7,10 @@ import (
 	"github.com/google/deck/backends/logger"
 )
 
+// AppID is the application identifier used for all log backends
+// (syslog, Windows Event Log, stderr).
+const AppID = "converge"
+
 // Init sets up deck logging. Console (stderr) logging only appears in verbose mode
 // to avoid polluting the pretty terminal output. Syslog/eventlog backends are
 // always active via platform-specific init files.

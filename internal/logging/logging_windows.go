@@ -10,7 +10,7 @@ import (
 
 func init() {
 	ensureEventSource()
-	evt, err := eventlog.Init("Converge")
+	evt, err := eventlog.Init(AppID)
 	if err != nil {
 		return
 	}
@@ -21,7 +21,7 @@ func init() {
 // if it doesn't exist. This is normally done by the MSI installer,
 // but we do it here as a fallback for manual installs.
 func ensureEventSource() {
-	const keyPath = `SYSTEM\CurrentControlSet\Services\EventLog\Application\Converge`
+	keyPath := `SYSTEM\CurrentControlSet\Services\EventLog\Application\` + AppID
 	k, _, err := registry.CreateKey(registry.LOCAL_MACHINE, keyPath, registry.SET_VALUE)
 	if err != nil {
 		return // not admin, can't register

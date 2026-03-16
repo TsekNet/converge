@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	sl, err := syslog.Init("converge", syslog.LOG_USER)
+	sl, err := syslog.Init(AppID, syslog.LOG_USER)
 	if err != nil {
 		return
 	}
