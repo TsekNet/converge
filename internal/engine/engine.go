@@ -183,6 +183,7 @@ func RunApplyDAG(g *graph.Graph, printer output.Printer, opts Options) (int, err
 		results := make([]applyResult, len(layer))
 
 		if opts.Parallel > 1 && len(layer) > 1 {
+			// Parallel: run all, print after layer completes.
 			sem := make(chan struct{}, opts.Parallel)
 			var wg sync.WaitGroup
 			for i, r := range layer {
@@ -195,17 +196,22 @@ func RunApplyDAG(g *graph.Graph, printer output.Printer, opts Options) (int, err
 				}(i, r)
 			}
 			wg.Wait()
+			for _, ar := range results {
+				idx++
+				printer.ApplyStart(ar.ext, idx, len(all))
+				printer.ApplyResult(ar.ext, ar.result)
+			}
 		} else {
+			// Sequential: stream output as each resource completes.
 			for i, r := range layer {
+				idx++
+				printer.ApplyStart(r, idx, len(all))
 				results[i] = applyOne(ctx, r, opts.Timeout, noopSet[r.ID()])
+				printer.ApplyResult(r, results[i].result)
 			}
 		}
 
 		for _, ar := range results {
-			idx++
-			printer.ApplyStart(ar.ext, idx, len(all))
-			printer.ApplyResult(ar.ext, ar.result)
-
 			switch ar.result.Status {
 			case extensions.StatusOK:
 				ok++
