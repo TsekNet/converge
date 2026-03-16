@@ -40,19 +40,21 @@ func Workstation(r *dsl.Run) {
 }
 ```
 
-**2. Plan and apply:**
+**2. Plan and serve:**
 
 ```bash
-converge plan workstation              # dry-run, no root needed
-sudo converge apply workstation        # converge to desired state
+converge plan workstation               # dry-run, no root needed
+sudo converge serve workstation         # run as persistent daemon, re-converge on drift
+sudo converge serve workstation --once  # converge once and exit (CI/Packer)
 ```
 
 **3. Flags:**
 
 ```bash
 converge plan my-server --out=json             # machine-readable output (also: serial)
-converge apply my-server --parallel 4          # run resources concurrently
-converge apply my-server --timeout 2m          # per-resource timeout
+converge serve my-server --parallel 4          # concurrent initial convergence
+converge serve my-server --timeout 2m          # per-resource timeout
+converge serve my-server --max-retries 5       # retries before marking noncompliant
 converge plan my-server --detailed-exit-codes  # granular exit codes for CI
 ```
 
@@ -65,8 +67,12 @@ converge plan my-server --detailed-exit-codes  # granular exit codes for CI
 | **Cross-platform** | Linux, macOS, Windows from one codebase with build tags |
 | **Native OS APIs** | Win32 registry/SCM/LSA, Linux sysctl via `/proc/sys`, macOS plist via `howett.net/plist` -- no shelling out |
 | **CIS benchmarks** | Built-in CIS L1 blueprints for [Windows](blueprints/cis/cis_windows.go), [Ubuntu](blueprints/cis/cis_linux.go), and [macOS](blueprints/cis/cis_darwin.go) |
+| **DAG execution** | Resources execute in topological order with implicit dependency detection |
+| **Event-driven daemon** | `converge serve` watches for drift via OS events (inotify, dbus, etc.) |
+| **Auto-edges** | Implicit Service->Package, File->parent Dir dependencies |
+| **Retry + noncompliance** | Exponential backoff on failure, noncompliant after N retries |
 | **Plan / Apply** | Dry-run any blueprint before making changes |
-| **Parallel execution** | Concurrent resource application with configurable parallelism |
+| **Parallel execution** | Concurrent resource application within each DAG layer |
 | **Firewall management** | Declarative firewall rules across Linux (nftables), macOS (pf), Windows (registry API) |
 | **Rollout sharding** | Percentage-based canary rollouts with `r.InShard()` keyed on hardware serial |
 | **Encrypted config** | AES-256-GCM encrypted values in Go config maps, decrypted transparently by `r.Secret()` |

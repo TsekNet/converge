@@ -110,7 +110,7 @@ type Resource interface {
 |---------|-------------|
 | `dsl/` | Public SDK: blueprint types, opts structs, resource methods, shard/config helpers |
 | `extensions/` | Resource implementations: file, exec, firewall, pkg, service, user, registry, secpol, auditpol, sysctl, plist |
-| `internal/` | Engine, platform detection, output formatters, logging, version |
+| `internal/` | Engine, DAG graph, daemon, auto-edges, exit codes, platform detection, output, logging |
 | `cmd/converge/` | Cobra CLI entry point, blueprint registration |
 | `blueprints/` | Built-in blueprints: workstation, linux, darwin, windows, CIS L1 |
 
@@ -141,6 +141,21 @@ type Extension interface {
 - **Apply()** -- mutates the system. Requires root. Only called when Check() reports out-of-sync.
 - **String()** -- human-readable label for output (e.g. `File /etc/motd`).
 
+Extensions may optionally implement:
+
+```go
+type Watcher interface {
+    Watch(ctx context.Context, events chan<- Event) error
+}
+
+type Poller interface {
+    PollInterval() time.Duration
+}
+```
+
+- **Watcher** -- blocks on OS-level events (inotify, dbus, etc.) and sends events when the resource may have drifted. Used by daemon mode for instant drift detection.
+- **Poller** -- overrides the default poll interval for resources without native OS event support.
+
 ### Platform-Specific Code
 
 Platform-specific code uses Go build tags. There are no stubs or no-op shims -- if a platform doesn't need an extension, the DSL simply doesn't expose it.
@@ -151,32 +166,104 @@ Platform-specific code uses Go build tags. There are no stubs or no-op shims -- 
 
 This means a Linux blueprint can call `r.Sysctl()` but not `r.Registry()`. The compiler enforces platform correctness, no runtime "skipped (not Windows)" messages.
 
-### Engine Flow
+### DAG Engine
+
+Resources are organized in a directed acyclic graph (DAG). Dependencies are detected automatically via auto-edges and can be declared explicitly via `DependsOn`. The engine computes topological layers and executes them in order, with resources in the same layer running concurrently.
+
+```mermaid
+graph TD
+    P[package:nginx] --> F[file:/etc/nginx/nginx.conf]
+    P --> S[service:nginx]
+    F --> S
+    style P fill:#4a9,stroke:#333
+    style F fill:#49a,stroke:#333
+    style S fill:#a94,stroke:#333
+```
+
+**Topological layers:** Layer 0 (no deps) runs first, layer N runs after all layers < N complete. Within a layer, resources run concurrently up to `--parallel`.
+
+```mermaid
+flowchart LR
+    L0["Layer 0<br/>package:nginx"] --> L1["Layer 1<br/>file:/etc/nginx/nginx.conf"]
+    L1 --> L2["Layer 2<br/>service:nginx"]
+```
+
+### Auto-Edges
+
+Implicit dependencies are detected automatically:
+
+| From | To | Detection |
+|---|---|---|
+| `service:X` | `package:X` | Name equality |
+| `file:/a/b/c` | `file:/a/b` | Parent path match |
+| `service:X` | `file:*X*` | File path contains service name |
+
+Auto-edges that would create cycles are silently skipped.
+
+### Daemon Mode (`converge serve`)
 
 ```mermaid
 flowchart TD
-    A[CLI parse] --> B[Blueprint lookup]
-    B --> C["Run execution -- blueprint func appends extensions"]
-    C --> D[Input validation]
-    D --> E[Duplicate ID detection]
-    E --> F["Check() all extensions"]
-    F --> G{Plan or Apply?}
-    G -->|plan| H["Plan output (exit 0 or 5)"]
-    G -->|apply| I["Apply() out-of-sync extensions"]
-    I --> J["Post-apply Check()"]
-    J --> K{Converged?}
-    K -->|yes| L["Results + summary (exit 0/2)"]
-    K -->|no| M["Convergence failure (exit 3/4)"]
+    A[converge serve blueprint] --> B[Build DAG + auto-edges]
+    B --> C[Initial convergence<br/>topological order]
+    C --> D{--once?}
+    D -->|yes| E[Exit]
+    D -->|no| F[Start per-resource watchers]
+    F --> G[Event loop]
+    G --> H{Event received}
+    H --> I[Check + Apply resource]
+    I --> J{Success?}
+    J -->|yes| G
+    J -->|no| K[Exponential backoff retry]
+    K --> L{Max retries?}
+    L -->|no| G
+    L -->|yes| M[Mark noncompliant<br/>log warning<br/>keep watching]
+    M --> G
 ```
 
 **Key behaviors:**
 
-- **Declared order = execution order.** No dependency graph. Blueprint author controls ordering.
+- **Event-driven, not polling.** Resources implementing `Watcher` (File via inotify, Service via dbus) block on OS-level events. Near-zero CPU at idle.
+- **Polling fallback.** Resources without native OS events (Package, Exec) are polled at configurable intervals.
+- **Event coalescing.** Multiple rapid events for the same resource collapse into one CheckApply (500ms window).
+- **Rate limiting.** Per-resource rate limiter prevents flapping resources from consuming CPU.
+- **Exponential retry.** On failure: `baseDelay * 2^retryCount` (capped at 5 minutes). After `--max-retries` (default 3), resource is marked noncompliant.
+- **Noncompliance reset.** New external Watch events reset the retry counter, giving the resource another chance.
+
+### Plan Flow
+
+```mermaid
+flowchart TD
+    A[CLI parse] --> B[Blueprint lookup]
+    B --> C["Build DAG + auto-edges"]
+    C --> D["Check() all resources<br/>topological order"]
+    D --> E["Plan output (exit 0 or 5)"]
+```
+
+### Exit Codes
+
+Defined in `internal/exit/exit.go`:
+
+| Code | Name | Meaning |
+|---|---|---|
+| 0 | OK | All resources in sync |
+| 1 | Error | General error |
+| 2 | Changed | One or more resources changed |
+| 3 | PartialFail | Some resources failed |
+| 4 | AllFailed | All resources failed |
+| 5 | Pending | Plan mode: changes pending |
+| 10 | NotRoot | Requires root/administrator |
+| 11 | NotFound | Blueprint not found |
+
+**Key behaviors:**
+
+- **DAG execution order.** Resources execute in topological layer order. Dependencies complete before dependents.
+- **Auto-edges.** Implicit dependencies detected automatically (Service->Package, File->parent Dir).
 - **Duplicate detection.** Two extensions with same `ID()` = error before any Check().
 - **Critical flag.** If `Critical: true` (default), failure aborts remaining apply.
-- **Parallel execution.** `--parallel N` runs up to N resources concurrently (default: sequential).
+- **Parallel execution.** `--parallel N` runs up to N resources concurrently within each layer (default: sequential).
 - **Per-resource timeout.** `--timeout` sets the deadline for each resource's Check/Apply cycle.
-- **Detailed exit codes.** `--detailed-exit-codes` enables granular exit codes (2=changed, 3=partial, 4=all failed, 5=pending) for CI/CD integration.
+- **Detailed exit codes.** `--detailed-exit-codes` enables granular exit codes for CI/CD integration.
 
 ### Platform Abstraction
 
@@ -259,5 +346,5 @@ These are real bugs, outages, and hours lost managing endpoints with Chef at sca
 
 - **Not a provisioning tool.** Use Terraform for VMs, networks, cloud resources.
 - **Not a deployment tool.** No rolling deploys or blue-green. Percentage-based canary rollouts are supported via `r.InShard()`.
-- **Not a monitoring tool.** Plan mode detects drift, but Converge doesn't run as a daemon. Pair with Fleet/osquery/Prometheus.
+- **Not a monitoring tool.** `converge serve` detects and fixes drift in real-time, but doesn't provide dashboards or alerting. Pair with Fleet/osquery/Prometheus for observability.
 - **Not a package repository.** It installs packages but doesn't host them.
