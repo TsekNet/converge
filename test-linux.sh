@@ -53,9 +53,9 @@ echo ""
 echo "=== Test 4: File drift detection ==="
 $BIN serve baseline &
 PID=$!
-sleep 3
-echo "TAMPERED" > /etc/motd
 sleep 5
+echo "TAMPERED" > /etc/motd
+sleep 10
 kill $PID 2>/dev/null; wait $PID 2>/dev/null || true
 CONTENT=$(cat /etc/motd)
 if echo "$CONTENT" | grep -q "Managed by Converge"; then
@@ -87,9 +87,9 @@ echo ""
 echo "=== Test 6: User drift detection ==="
 $BIN serve baseline &
 PID=$!
-sleep 3
-userdel devuser 2>/dev/null || true
 sleep 5
+userdel devuser 2>/dev/null || true
+sleep 10
 kill $PID 2>/dev/null; wait $PID 2>/dev/null || true
 if id devuser &>/dev/null; then
     ok "User drift: devuser recreated"
