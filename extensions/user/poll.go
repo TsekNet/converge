@@ -1,3 +1,5 @@
+//go:build !windows
+
 package user
 
 import (
@@ -7,7 +9,7 @@ import (
 )
 
 // PollInterval returns the polling interval for user account state.
-// No OS provides native events for user account changes.
+// On Windows, WMI event subscription is used instead (see watch_windows.go).
 func (u *User) PollInterval() time.Duration {
 	return 60 * time.Second
 }
