@@ -177,11 +177,16 @@ func (p *TerminalPrinter) PlanSummary(pending, ok, total int) {
 			colorBold, colorGreen, colorReset,
 			colorGreen, ok, colorReset)
 	} else {
-		fmt.Printf("%s%s● PLAN%s  %s%d changed%s  %s%d ok%s  %s%d total%s\n",
+		var parts []string
+		if pending > 0 {
+			parts = append(parts, fmt.Sprintf("%s%d to change%s", colorYellow, pending, colorReset))
+		}
+		if ok > 0 {
+			parts = append(parts, fmt.Sprintf("%s%d ok%s", colorGreen, ok, colorReset))
+		}
+		fmt.Printf("%s%s● PLAN%s  %s\n",
 			colorBold, colorCyan, colorReset,
-			colorYellow, pending, colorReset,
-			colorGreen, ok, colorReset,
-			colorDim, total, colorReset)
+			strings.Join(parts, "  "))
 		fmt.Printf("%sRun %sconverge serve --timeout 1s%s%s to apply.%s\n",
 			colorDim, colorWhite, colorReset, colorDim, colorReset)
 	}
