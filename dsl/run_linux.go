@@ -9,5 +9,5 @@ func (r *Run) Sysctl(key string, opts SysctlOpts) {
 	if !r.require("Sysctl", "value", opts.Value) {
 		return
 	}
-	r.addResource(newSysctlExtension(key, opts), opts.Meta.DependsOn)
+	r.addResource(newSysctlExtension(key, opts), opts.Meta)
 }

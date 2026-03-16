@@ -7,6 +7,7 @@ package daemon
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/TsekNet/converge/extensions"
@@ -27,13 +28,14 @@ const (
 
 // Options controls daemon behavior.
 type Options struct {
-	Timeout         time.Duration // per-resource timeout
-	Parallel        int           // max concurrent resources during initial convergence
-	Once            bool          // exit after initial convergence
-	DefaultPollFreq time.Duration // poll interval for resources without Watcher or Poller
-	MaxRetries      int           // max retries before marking noncompliant (0 = use default)
-	RetryBaseDelay  time.Duration // base delay for exponential backoff (0 = use default)
-	CoalesceWindow  time.Duration // event coalescing window (0 = use default)
+	Timeout          time.Duration // per-resource timeout
+	Parallel         int           // max concurrent resources during initial convergence
+	Once             bool          // exit after initial convergence
+	DefaultPollFreq  time.Duration // poll interval for resources without Watcher or Poller
+	MaxRetries       int           // max retries before marking noncompliant (0 = use default)
+	RetryBaseDelay   time.Duration // base delay for exponential backoff (0 = use default)
+	CoalesceWindow   time.Duration // event coalescing window (0 = use default)
+	ConvergedTimeout time.Duration // exit after system is stable for this duration (0 = run forever)
 }
 
 // Daemon watches resources for drift and re-converges them.
@@ -42,8 +44,9 @@ type Daemon struct {
 	printer    output.Printer
 	opts       Options
 	retries    *retryManager
-	initErr    error    // error from initial convergence
-	processing sync.Map // tracks in-progress resource IDs
+	initErr    error      // error from initial convergence
+	processing sync.Map   // tracks in-progress resource IDs
+	lastChange atomic.Int64 // unix nano timestamp of last Apply that changed something
 }
 
 // New creates a daemon for the given resource graph.
@@ -64,6 +67,9 @@ func New(g *graph.Graph, printer output.Printer, opts Options) *Daemon {
 	rm := newRetryManager(opts.MaxRetries, opts.RetryBaseDelay)
 	for _, node := range g.Nodes() {
 		rm.register(node.Ext.ID())
+		if node.Meta.Retry > 0 {
+			rm.setRetryOverride(node.Ext.ID(), node.Meta.Retry)
+		}
 	}
 
 	return &Daemon{graph: g, printer: printer, opts: opts, retries: rm}
@@ -130,10 +136,22 @@ func (d *Daemon) Run(ctx context.Context) error {
 		}
 	}()
 
+	// Converged timeout: exit after system is stable for the specified duration.
+	loopCtx := ctx
+	var convergedCancel context.CancelFunc
+	if d.opts.ConvergedTimeout > 0 {
+		loopCtx, convergedCancel = context.WithCancel(ctx)
+		d.lastChange.Store(time.Now().UnixNano())
+		go d.watchConvergence(loopCtx, convergedCancel)
+	}
+
 	// Phase 4: rate-limited event loop reads from both channels.
 	rl := newResourceRateLimiter(defaultRatePerResource, defaultRateBurst)
-	d.processLoop(ctx, coalescedIDs, retryIDs, eventMeta, rl, rawEvents)
+	d.processLoop(loopCtx, coalescedIDs, retryIDs, eventMeta, rl, rawEvents)
 
+	if convergedCancel != nil {
+		convergedCancel()
+	}
 	watchCancel()
 	wg.Wait()
 	return d.initErr
@@ -150,8 +168,26 @@ func (d *Daemon) startWatchers(ctx context.Context, eventCh chan extensions.Even
 		if w, ok := ext.(extensions.Watcher); ok {
 			go func(w extensions.Watcher, ext extensions.Extension) {
 				defer wg.Done()
-				if err := w.Watch(ctx, eventCh); err != nil && ctx.Err() == nil {
-					deck.Errorf("watcher %s exited: %v", ext.ID(), err)
+				backoff := time.Second
+				maxBackoff := 5 * time.Minute
+				for {
+					err := w.Watch(ctx, eventCh)
+					if ctx.Err() != nil {
+						return
+					}
+					if err == nil {
+						return
+					}
+					deck.Warningf("watcher %s failed, restarting in %v: %v", ext.ID(), backoff, err)
+					select {
+					case <-time.After(backoff):
+						backoff *= 2
+						if backoff > maxBackoff {
+							backoff = maxBackoff
+						}
+					case <-ctx.Done():
+						return
+					}
 				}
 			}(w, ext)
 		} else {
@@ -274,7 +310,10 @@ func (d *Daemon) convergeResource(ctx context.Context, ext extensions.Extension,
 		return
 	}
 
-	if result != nil {
+	if result != nil && result.Changed {
+		d.lastChange.Store(time.Now().UnixNano())
+		d.printer.ApplyResult(ext, result)
+	} else if result != nil {
 		d.printer.ApplyResult(ext, result)
 	}
 	d.retries.reset(id)
@@ -290,6 +329,26 @@ func (d *Daemon) convergeResource(ctx context.Context, ext extensions.Extension,
 			Time:       time.Now(),
 		}:
 		default:
+		}
+	}
+}
+
+// watchConvergence monitors the last change timestamp and cancels the context
+// once the system has been stable for ConvergedTimeout.
+func (d *Daemon) watchConvergence(ctx context.Context, cancel context.CancelFunc) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			last := time.Unix(0, d.lastChange.Load())
+			if time.Since(last) >= d.opts.ConvergedTimeout {
+				deck.Infof("system stable for %v, shutting down", d.opts.ConvergedTimeout)
+				cancel()
+				return
+			}
 		}
 	}
 }

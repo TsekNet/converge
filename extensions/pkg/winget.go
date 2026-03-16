@@ -37,3 +37,21 @@ func (w *wingetManager) Remove(ctx context.Context, name string) error {
 	}
 	return nil
 }
+
+func (w *wingetManager) InstallBatch(ctx context.Context, names []string) error {
+	for _, name := range names {
+		if err := w.Install(ctx, name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w *wingetManager) RemoveBatch(ctx context.Context, names []string) error {
+	for _, name := range names {
+		if err := w.Remove(ctx, name); err != nil {
+			return err
+		}
+	}
+	return nil
+}

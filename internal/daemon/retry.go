@@ -31,6 +31,7 @@ type retryManager struct {
 	states     map[string]*resourceState
 	maxRetries int
 	baseDelay  time.Duration
+	overrides  map[string]int // per-resource max retry overrides
 }
 
 // resourceState tracks per-resource retry and compliance state.
@@ -47,7 +48,23 @@ func newRetryManager(maxRetries int, baseDelay time.Duration) *retryManager {
 		states:     make(map[string]*resourceState),
 		maxRetries: maxRetries,
 		baseDelay:  baseDelay,
+		overrides:  make(map[string]int),
 	}
+}
+
+// setRetryOverride sets a per-resource max retry count. 0 means use default.
+func (rm *retryManager) setRetryOverride(id string, maxRetries int) {
+	if maxRetries > 0 {
+		rm.overrides[id] = maxRetries
+	}
+}
+
+// effectiveMaxRetries returns the per-resource override if set, else the global default.
+func (rm *retryManager) effectiveMaxRetries(id string) int {
+	if v, ok := rm.overrides[id]; ok {
+		return v
+	}
+	return rm.maxRetries
 }
 
 func (rm *retryManager) register(id string) {
@@ -134,7 +151,7 @@ func (rm *retryManager) recordFailure(id string, err error) time.Duration {
 	s.retryCount++
 	s.lastError = err
 
-	if s.retryCount >= rm.maxRetries {
+	if s.retryCount >= rm.effectiveMaxRetries(id) {
 		s.compliance = Noncompliant
 		deck.Warningf("resource %s noncompliant after %d retries: %v", id, s.retryCount, err)
 		return 0

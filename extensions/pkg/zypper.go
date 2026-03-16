@@ -37,3 +37,23 @@ func (z *zypperManager) Remove(ctx context.Context, name string) error {
 	}
 	return nil
 }
+
+func (z *zypperManager) InstallBatch(ctx context.Context, names []string) error {
+	args := append([]string{"install", "-n"}, names...)
+	cmd := exec.CommandContext(ctx, "zypper", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zypper install %s: %s: %w", strings.Join(names, " "), strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func (z *zypperManager) RemoveBatch(ctx context.Context, names []string) error {
+	args := append([]string{"remove", "-n"}, names...)
+	cmd := exec.CommandContext(ctx, "zypper", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zypper remove %s: %s: %w", strings.Join(names, " "), strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}

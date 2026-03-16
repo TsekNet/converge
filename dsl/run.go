@@ -9,6 +9,16 @@ import (
 	"github.com/TsekNet/converge/internal/platform"
 )
 
+func toNodeMeta(m ResourceMeta) graph.NodeMeta {
+	return graph.NodeMeta{
+		Noop:      m.Noop,
+		Retry:     m.Retry,
+		Limit:     m.Limit,
+		AutoEdge:  m.AutoEdge,
+		AutoGroup: m.AutoGroup,
+	}
+}
+
 // Run is the context passed to blueprints for declaring resources.
 // Errors during resource declaration are accumulated, not panicked.
 type Run struct {
@@ -26,12 +36,13 @@ func newRun(app *App) *Run {
 	}
 }
 
-func (r *Run) addResource(ext extensions.Extension, deps []string) {
+func (r *Run) addResource(ext extensions.Extension, meta ResourceMeta) {
 	if err := r.graph.AddNode(ext); err != nil {
 		r.errs = append(r.errs, fmt.Errorf("%s: %v", ext.ID(), err))
 		return
 	}
-	for _, dep := range deps {
+	r.graph.SetMeta(ext.ID(), toNodeMeta(meta))
+	for _, dep := range meta.DependsOn {
 		if err := r.graph.AddEdge(ext.ID(), dep); err != nil {
 			r.errs = append(r.errs, fmt.Errorf("dependency %s -> %s: %v", ext.ID(), dep, err))
 			return
@@ -87,7 +98,7 @@ func (r *Run) File(path string, opts FileOpts) {
 	if !r.require("File", "path", path) {
 		return
 	}
-	r.addResource(newFileExtension(path, opts), opts.Meta.DependsOn)
+	r.addResource(newFileExtension(path, opts), opts.Meta)
 }
 
 func (r *Run) Package(name string, opts PackageOpts) {
@@ -97,7 +108,7 @@ func (r *Run) Package(name string, opts PackageOpts) {
 	if opts.State == "" {
 		opts.State = Present
 	}
-	r.addResource(newPackageExtension(name, opts, r.platform.PkgManager), opts.Meta.DependsOn)
+	r.addResource(newPackageExtension(name, opts, r.platform.PkgManager), opts.Meta)
 }
 
 func (r *Run) Service(name string, opts ServiceOpts) {
@@ -107,7 +118,7 @@ func (r *Run) Service(name string, opts ServiceOpts) {
 	if opts.State == "" {
 		opts.State = Running
 	}
-	r.addResource(newServiceExtension(name, opts, r.platform.InitSystem), opts.Meta.DependsOn)
+	r.addResource(newServiceExtension(name, opts, r.platform.InitSystem), opts.Meta)
 }
 
 func (r *Run) Exec(name string, opts ExecOpts) {
@@ -117,14 +128,14 @@ func (r *Run) Exec(name string, opts ExecOpts) {
 	if !r.require("Exec", "command", opts.Command) {
 		return
 	}
-	r.addResource(newExecExtension(name, opts), opts.Meta.DependsOn)
+	r.addResource(newExecExtension(name, opts), opts.Meta)
 }
 
 func (r *Run) User(name string, opts UserOpts) {
 	if !r.require("User", "name", name) {
 		return
 	}
-	r.addResource(newUserExtension(name, opts), opts.Meta.DependsOn)
+	r.addResource(newUserExtension(name, opts), opts.Meta)
 }
 
 func (r *Run) Firewall(name string, opts FirewallOpts) {
@@ -140,5 +151,5 @@ func (r *Run) Firewall(name string, opts FirewallOpts) {
 	if opts.Action == "" {
 		opts.Action = "allow"
 	}
-	r.addResource(newFirewallExtension(name, opts), opts.Meta.DependsOn)
+	r.addResource(newFirewallExtension(name, opts), opts.Meta)
 }

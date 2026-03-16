@@ -20,7 +20,17 @@ var rules = []rule{
 	serviceToConfigFile,
 }
 
+// autoEdgeDisabled returns true if the node has AutoEdge explicitly set to false.
+func autoEdgeDisabled(g *graph.Graph, id string) bool {
+	node := g.Node(id)
+	if node == nil {
+		return false
+	}
+	return node.Meta.AutoEdge != nil && !*node.Meta.AutoEdge
+}
+
 // AddAutoEdges applies all auto-edge rules to the graph.
+// Nodes with AutoEdge=false in their meta are skipped.
 // Edges that would create cycles are silently skipped (logged as warnings).
 func AddAutoEdges(g *graph.Graph) error {
 	for _, r := range rules {
@@ -38,9 +48,15 @@ func serviceToPackage(g *graph.Graph) error {
 		if !strings.HasPrefix(id, "service:") {
 			continue
 		}
+		if autoEdgeDisabled(g, id) {
+			continue
+		}
 		name := strings.TrimPrefix(id, "service:")
 		depID := "package:" + name
 		if g.Node(depID) == nil {
+			continue
+		}
+		if autoEdgeDisabled(g, depID) {
 			continue
 		}
 		tryAddEdge(g, id, depID)
@@ -55,10 +71,16 @@ func fileToParentDir(g *graph.Graph) error {
 		if !strings.HasPrefix(id, "file:") {
 			continue
 		}
+		if autoEdgeDisabled(g, id) {
+			continue
+		}
 		path := strings.TrimPrefix(id, "file:")
 		parentPath := filepath.Dir(path)
 		parentID := "file:" + parentPath
 		if parentID == id || g.Node(parentID) == nil {
+			continue
+		}
+		if autoEdgeDisabled(g, parentID) {
 			continue
 		}
 		tryAddEdge(g, id, parentID)
@@ -75,6 +97,9 @@ func serviceToConfigFile(g *graph.Graph) error {
 		if !strings.HasPrefix(svcID, "service:") {
 			continue
 		}
+		if autoEdgeDisabled(g, svcID) {
+			continue
+		}
 		svcName := strings.TrimPrefix(svcID, "service:")
 		if len(svcName) < 3 {
 			continue // skip short names to avoid false positives
@@ -82,6 +107,9 @@ func serviceToConfigFile(g *graph.Graph) error {
 		for _, fileNode := range g.Nodes() {
 			fileID := fileNode.Ext.ID()
 			if !strings.HasPrefix(fileID, "file:") {
+				continue
+			}
+			if autoEdgeDisabled(g, fileID) {
 				continue
 			}
 			filePath := strings.TrimPrefix(fileID, "file:")

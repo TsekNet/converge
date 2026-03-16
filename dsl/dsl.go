@@ -28,6 +28,11 @@ const (
 type ResourceMeta struct {
 	DependsOn []string
 	Critical  bool
+	Noop      bool    // skip Apply, only Check (per-resource dry-run)
+	Retry     int     // per-resource max retries (0 = use daemon default)
+	Limit     float64 // per-resource rate limit (0 = use daemon default)
+	AutoEdge  *bool   // nil = enabled (default), false = disable auto-edges for this resource
+	AutoGroup *bool   // nil = enabled (default), false = disable auto-grouping for this resource
 }
 
 type FileOpts struct {

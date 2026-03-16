@@ -37,3 +37,23 @@ func (y *yumManager) Remove(ctx context.Context, name string) error {
 	}
 	return nil
 }
+
+func (y *yumManager) InstallBatch(ctx context.Context, names []string) error {
+	args := append([]string{"install", "-y"}, names...)
+	cmd := exec.CommandContext(ctx, "yum", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("yum install %s: %s: %w", strings.Join(names, " "), strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func (y *yumManager) RemoveBatch(ctx context.Context, names []string) error {
+	args := append([]string{"remove", "-y"}, names...)
+	cmd := exec.CommandContext(ctx, "yum", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("yum remove %s: %s: %w", strings.Join(names, " "), strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}

@@ -9,5 +9,5 @@ func (r *Run) Plist(domain string, opts PlistOpts) {
 	if !r.require("Plist", "key", opts.Key) {
 		return
 	}
-	r.addResource(newPlistExtension(domain, opts), opts.Meta.DependsOn)
+	r.addResource(newPlistExtension(domain, opts), opts.Meta)
 }

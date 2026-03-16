@@ -37,3 +37,23 @@ func (d *dnfManager) Remove(ctx context.Context, name string) error {
 	}
 	return nil
 }
+
+func (d *dnfManager) InstallBatch(ctx context.Context, names []string) error {
+	args := append([]string{"install", "-y"}, names...)
+	cmd := exec.CommandContext(ctx, "dnf", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("dnf install %s: %s: %w", strings.Join(names, " "), strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func (d *dnfManager) RemoveBatch(ctx context.Context, names []string) error {
+	args := append([]string{"remove", "-y"}, names...)
+	cmd := exec.CommandContext(ctx, "dnf", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("dnf remove %s: %s: %w", strings.Join(names, " "), strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}

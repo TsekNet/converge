@@ -37,3 +37,23 @@ func (p *pacmanManager) Remove(ctx context.Context, name string) error {
 	}
 	return nil
 }
+
+func (p *pacmanManager) InstallBatch(ctx context.Context, names []string) error {
+	args := append([]string{"-S", "--noconfirm"}, names...)
+	cmd := exec.CommandContext(ctx, "pacman", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("pacman -S %s: %s: %w", strings.Join(names, " "), strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func (p *pacmanManager) RemoveBatch(ctx context.Context, names []string) error {
+	args := append([]string{"-R", "--noconfirm"}, names...)
+	cmd := exec.CommandContext(ctx, "pacman", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("pacman -R %s: %s: %w", strings.Join(names, " "), strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}

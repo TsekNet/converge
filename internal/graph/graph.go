@@ -12,9 +12,19 @@ import (
 	"github.com/TsekNet/converge/extensions"
 )
 
+// NodeMeta holds per-resource meta overrides set by the DSL.
+type NodeMeta struct {
+	Noop      bool    // skip Apply, only Check (per-resource dry-run)
+	Retry     int     // per-resource max retries (0 = use daemon default)
+	Limit     float64 // per-resource rate limit (0 = use daemon default)
+	AutoEdge  *bool   // nil = enabled (default), false = disable auto-edges
+	AutoGroup *bool   // nil = enabled (default), false = disable auto-grouping
+}
+
 // Node wraps an Extension with DAG metadata.
 type Node struct {
-	Ext extensions.Extension
+	Ext  extensions.Extension
+	Meta NodeMeta
 }
 
 // Graph holds all resource nodes and their dependency edges.
@@ -75,6 +85,13 @@ func (g *Graph) AddEdge(fromID, toID string) error {
 	g.inDegree[fromID]++
 	g.children[toID] = append(g.children[toID], fromID)
 	return nil
+}
+
+// SetMeta sets per-resource meta overrides on an existing node.
+func (g *Graph) SetMeta(id string, meta NodeMeta) {
+	if n, ok := g.nodes[id]; ok {
+		n.Meta = meta
+	}
 }
 
 // Node returns the node with the given ID, or nil if not found.
@@ -141,6 +158,54 @@ func (g *Graph) WouldCycle(fromID, toID string) bool {
 // Children returns the IDs of nodes that depend on the given node.
 func (g *Graph) Children(id string) []string {
 	return g.children[id]
+}
+
+// TopologicalNodeLayers returns nodes grouped by dependency depth.
+// Same algorithm as TopologicalLayers but returns *Node instead of Extension.
+func (g *Graph) TopologicalNodeLayers() ([][]*Node, error) {
+	if len(g.nodes) == 0 {
+		return nil, nil
+	}
+
+	deg := make(map[string]int, len(g.nodes))
+	for id, d := range g.inDegree {
+		deg[id] = d
+	}
+
+	queue := make([]string, 0, len(g.nodes))
+	for id, d := range deg {
+		if d == 0 {
+			queue = append(queue, id)
+		}
+	}
+
+	var layers [][]*Node
+	placed := 0
+
+	for len(queue) > 0 {
+		layer := make([]*Node, 0, len(queue))
+		var nextQueue []string
+
+		for _, id := range queue {
+			layer = append(layer, g.nodes[id])
+			placed++
+			for _, child := range g.children[id] {
+				deg[child]--
+				if deg[child] == 0 {
+					nextQueue = append(nextQueue, child)
+				}
+			}
+		}
+
+		layers = append(layers, layer)
+		queue = nextQueue
+	}
+
+	if placed != len(g.nodes) {
+		return nil, fmt.Errorf("cycle detected: placed %d of %d nodes", placed, len(g.nodes))
+	}
+
+	return layers, nil
 }
 
 // TopologicalLayers returns resources grouped by dependency depth.

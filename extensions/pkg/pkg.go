@@ -15,6 +15,13 @@ type PackageManager interface {
 	Remove(ctx context.Context, name string) error
 }
 
+// BatchInstaller is optionally implemented by PackageManagers that support
+// installing or removing multiple packages in a single invocation.
+type BatchInstaller interface {
+	InstallBatch(ctx context.Context, names []string) error
+	RemoveBatch(ctx context.Context, names []string) error
+}
+
 type Package struct {
 	PkgName     string
 	State       string // "present" or "absent"

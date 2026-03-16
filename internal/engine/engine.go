@@ -79,7 +79,7 @@ func (ar applyResult) failed() bool {
 	return ar.result.Status == extensions.StatusFailed
 }
 
-func applyOne(ctx context.Context, r extensions.Extension, timeout time.Duration) applyResult {
+func applyOne(ctx context.Context, r extensions.Extension, timeout time.Duration, noop bool) applyResult {
 	start := time.Now()
 
 	rctx, cancel := withTimeout(ctx, timeout)
@@ -96,6 +96,15 @@ func applyOne(ctx context.Context, r extensions.Extension, timeout time.Duration
 	}
 	if state.InSync {
 		return applyResult{r, &extensions.Result{Status: extensions.StatusOK}}
+	}
+
+	// Per-resource noop: report drift but skip Apply.
+	if noop {
+		return applyResult{r, &extensions.Result{
+			Status:   extensions.StatusOK,
+			Message:  "noop: drift detected, apply skipped",
+			Duration: time.Since(start),
+		}}
 	}
 
 	rctx, cancel = withTimeout(ctx, timeout)
@@ -144,13 +153,23 @@ func RunPlanDAG(g *graph.Graph, printer output.Printer, opts Options) (int, erro
 // RunApplyDAG checks and applies changes in topological layer order.
 // Resources within the same layer run concurrently up to opts.Parallel.
 // Dependencies in earlier layers complete before later layers start.
+// Package resources in the same layer with the same manager and state
+// are auto-grouped into a single batch install/remove invocation.
 func RunApplyDAG(g *graph.Graph, printer output.Printer, opts Options) (int, error) {
-	layers, err := g.TopologicalLayers()
+	nodeLayers, err := g.TopologicalNodeLayers()
 	if err != nil {
 		return exit.Error, fmt.Errorf("building execution order: %w", err)
 	}
 
 	all, _ := g.Flatten()
+
+	// Build a noop lookup from node meta.
+	noopSet := make(map[string]bool)
+	for _, node := range g.Nodes() {
+		if node.Meta.Noop {
+			noopSet[node.Ext.ID()] = true
+		}
+	}
 
 	ctx := context.Background()
 	start := time.Now()
@@ -159,7 +178,8 @@ func RunApplyDAG(g *graph.Graph, printer output.Printer, opts Options) (int, err
 
 	setMaxNameLen(all, printer)
 
-	for _, layer := range layers {
+	for _, nodeLayer := range nodeLayers {
+		layer := autoGroupLayer(nodeLayer)
 		results := make([]applyResult, len(layer))
 
 		if opts.Parallel > 1 && len(layer) > 1 {
@@ -171,13 +191,13 @@ func RunApplyDAG(g *graph.Graph, printer output.Printer, opts Options) (int, err
 				go func(j int, res extensions.Extension) {
 					defer wg.Done()
 					defer func() { <-sem }()
-					results[j] = applyOne(ctx, res, opts.Timeout)
+					results[j] = applyOne(ctx, res, opts.Timeout, noopSet[res.ID()])
 				}(i, r)
 			}
 			wg.Wait()
 		} else {
 			for i, r := range layer {
-				results[i] = applyOne(ctx, r, opts.Timeout)
+				results[i] = applyOne(ctx, r, opts.Timeout, noopSet[r.ID()])
 			}
 		}
 

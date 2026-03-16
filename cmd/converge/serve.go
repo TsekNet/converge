@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/TsekNet/converge/internal/daemon"
 	"github.com/TsekNet/converge/internal/exit"
@@ -14,8 +15,9 @@ import (
 )
 
 var (
-	once       bool
-	maxRetries int
+	once             bool
+	maxRetries       int
+	convergedTimeout time.Duration
 )
 
 var serveCmd = &cobra.Command{
@@ -38,10 +40,11 @@ var serveCmd = &cobra.Command{
 		}
 
 		opts := daemon.Options{
-			Timeout:    timeout,
-			Parallel:   parallel,
-			Once:       once,
-			MaxRetries: maxRetries,
+			Timeout:          timeout,
+			Parallel:         parallel,
+			Once:             once,
+			MaxRetries:       maxRetries,
+			ConvergedTimeout: convergedTimeout,
 		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -58,6 +61,7 @@ var serveCmd = &cobra.Command{
 func init() {
 	serveCmd.Flags().BoolVar(&once, "once", false, "exit after initial convergence (CI/Packer mode)")
 	serveCmd.Flags().IntVar(&maxRetries, "max-retries", 3, "max retries before marking a resource noncompliant")
+	serveCmd.Flags().DurationVar(&convergedTimeout, "converged-timeout", 0, "exit after system is stable for this duration (0 = run forever)")
 	rootCmd.AddCommand(serveCmd)
 }
 
