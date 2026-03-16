@@ -98,7 +98,7 @@ func (p *TerminalPrinter) PlanResult(ext extensions.Extension, state *extensions
 func (p *TerminalPrinter) ApplyStart(ext extensions.Extension, current, total int) {
 	resType, resName := splitResource(ext.String())
 	p.printGroupHeader(resType)
-	p.spinner.Start(fmt.Sprintf(" %s %s%d/%d%s", resName, colorDim, current, total, colorReset))
+	p.spinner.Start(fmt.Sprintf("%s %s%d/%d%s", resName, colorDim, current, total, colorReset))
 }
 
 func (p *TerminalPrinter) ApplyResult(ext extensions.Extension, result *extensions.Result) {

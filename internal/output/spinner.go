@@ -49,7 +49,7 @@ func (s *Spinner) Start(message string) {
 				s.mu.Lock()
 				msg := s.message
 				s.mu.Unlock()
-				fmt.Printf("\r\033[K    %s%s%s %s", colorCyan, spinnerFrames[i%len(spinnerFrames)], colorReset, msg)
+				fmt.Printf("\r\033[K  %s%s%s %s", colorCyan, spinnerFrames[i%len(spinnerFrames)], colorReset, msg)
 				i++
 				time.Sleep(80 * time.Millisecond)
 			}
