@@ -8,6 +8,7 @@ require (
 	github.com/heimdalr/dag v1.5.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/sys v0.42.0
+	golang.org/x/time v0.15.0
 	howett.net/plist v1.0.1
 )
 
