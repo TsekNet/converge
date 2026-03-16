@@ -146,25 +146,27 @@ func (p *TerminalPrinter) ApplyResult(ext extensions.Extension, result *extensio
 func (p *TerminalPrinter) Summary(changed, ok, failed, total int, durationMs int64) {
 	dur := formatDuration(time.Duration(durationMs) * time.Millisecond)
 	fmt.Printf("%s────────────────────────────────────────────%s\n", colorDim, colorReset)
+
+	symbol, symbolColor := "✓", colorGreen
 	if failed > 0 {
-		fmt.Printf("%s%s✗ APPLY%s  %s%d error%s  %s%d changed%s  %s%d ok%s  %s%d total (%s)%s\n",
-			colorBold, colorRed, colorReset,
-			colorRed, failed, colorReset,
-			colorYellow, changed, colorReset,
-			colorGreen, ok, colorReset,
-			colorDim, total, dur, colorReset)
-	} else if changed == 0 {
-		fmt.Printf("%s%s✓ APPLY%s  %s%d ok%s  %s(%s)%s\n",
-			colorBold, colorGreen, colorReset,
-			colorGreen, ok, colorReset,
-			colorDim, dur, colorReset)
-	} else {
-		fmt.Printf("%s%s✓ APPLY%s  %s%d changed%s  %s%d ok%s  %s%d total (%s)%s\n",
-			colorBold, colorGreen, colorReset,
-			colorYellow, changed, colorReset,
-			colorGreen, ok, colorReset,
-			colorDim, total, dur, colorReset)
+		symbol, symbolColor = "✗", colorRed
 	}
+
+	var parts []string
+	if failed > 0 {
+		parts = append(parts, fmt.Sprintf("%s%d error%s", colorRed, failed, colorReset))
+	}
+	if changed > 0 {
+		parts = append(parts, fmt.Sprintf("%s%d changed%s", colorYellow, changed, colorReset))
+	}
+	if ok > 0 {
+		parts = append(parts, fmt.Sprintf("%s%d ok%s", colorGreen, ok, colorReset))
+	}
+
+	fmt.Printf("%s%s%s APPLY%s  %s  %s(%s)%s\n",
+		colorBold, symbolColor, symbol, colorReset,
+		strings.Join(parts, "  "),
+		colorDim, dur, colorReset)
 	fmt.Println()
 }
 
