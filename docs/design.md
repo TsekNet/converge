@@ -403,3 +403,28 @@ What converge does **not** do:
 - **Fleet-wide orchestration.** No rolling deploys, blue-green, or traffic shifting across hosts. Converge manages per-host state. Use `r.InShard()` for percentage-based canary rollouts within a fleet.
 - **Dashboards and alerting.** `converge serve` detects and fixes drift in real-time, but doesn't provide observability UI. Pair with Fleet/osquery/Prometheus.
 - **Package hosting.** It installs packages but doesn't host them.
+
+---
+
+## Immutable Infrastructure and Converge
+
+Immutable infrastructure (NixOS, OSTree, image-based macOS MDM, golden VM images built with Packer) is a legitimate and increasingly popular approach: bake configuration into the image, redeploy rather than mutate. For servers and containers this model works well.
+
+Converge is complementary to immutable images, not a replacement for them. The same blueprint runs in both phases:
+
+1. **Image build (Packer, cloud-init, OS deployment):** Run `converge serve --timeout 30s` as a provisioner step. Converge applies the full blueprint once and exits when the system is stable. The hardened, configured state is baked into the image.
+2. **Running system:** The same binary runs as a daemon. Any drift from the baked state, whether from a user change, an in-place OS update reverting a setting, or a sysadmin editing a file directly, is detected and corrected in under a second.
+
+One blueprint, two modes, zero duplication between image build and runtime enforcement.
+
+Endpoints are not servers:
+
+| Constraint | Servers/Containers | Endpoints (macOS, Windows, Linux workstations) |
+|---|---|---|
+| Can redeploy to fix drift | Yes: replace the container or VM | Rarely: reimaging disrupts the user |
+| User-installed software | No: image is immutable | Yes: users install things; drift is expected |
+| Hardware-tied state | No | Yes: local certificates, TPM-bound keys, per-device enrollment |
+| OS update model | Replace image | In-place upgrade (Windows Update, macOS, apt) |
+| Persona/profile | Stateless | Stateful: home dir, preferences, enrolled identities |
+
+Even with an immutable OS base, endpoints accumulate mutable state after first boot. Converge detects and corrects that drift without requiring a reimaging cycle.
