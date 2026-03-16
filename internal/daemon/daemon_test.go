@@ -13,19 +13,26 @@ import (
 )
 
 // mockExt implements Extension with configurable Check/Apply behavior.
+// All fields accessed from multiple goroutines use atomics.
 type mockExt struct {
 	id      string
-	inSync  bool
+	inSync  atomic.Bool
 	applied atomic.Int32
+}
+
+func newMockExt(id string, inSync bool) *mockExt {
+	m := &mockExt{id: id}
+	m.inSync.Store(inSync)
+	return m
 }
 
 func (m *mockExt) ID() string { return m.id }
 func (m *mockExt) Check(_ context.Context) (*extensions.State, error) {
-	return &extensions.State{InSync: m.inSync}, nil
+	return &extensions.State{InSync: m.inSync.Load()}, nil
 }
 func (m *mockExt) Apply(_ context.Context) (*extensions.Result, error) {
 	m.applied.Add(1)
-	m.inSync = true
+	m.inSync.Store(true)
 	return &extensions.Result{Status: extensions.StatusChanged, Changed: true}, nil
 }
 func (m *mockExt) String() string { return m.id }
@@ -63,7 +70,7 @@ func (p *nullPrinter) Error(_ extensions.Extension, _ error)                    
 var _ output.Printer = (*nullPrinter)(nil)
 
 func TestDaemon_InitialConvergence(t *testing.T) {
-	ext := &mockExt{id: "file:/etc/test", inSync: false}
+	ext := newMockExt("file:/etc/test", false)
 
 	g := graph.New()
 	g.AddNode(ext)
@@ -88,7 +95,7 @@ func TestDaemon_InitialConvergence(t *testing.T) {
 
 func TestDaemon_WatcherTriggersApply(t *testing.T) {
 	ext := &mockWatcherExt{
-		mockExt: mockExt{id: "file:/etc/test", inSync: true},
+		mockExt: *newMockExt("file:/etc/test", true),
 		watchFn: func(ctx context.Context, events chan<- extensions.Event) error {
 			select {
 			case <-time.After(50 * time.Millisecond):
@@ -119,7 +126,7 @@ func TestDaemon_WatcherTriggersApply(t *testing.T) {
 
 	go func() {
 		time.Sleep(40 * time.Millisecond)
-		ext.inSync = false
+		ext.inSync.Store(false)
 	}()
 
 	d.Run(ctx)
@@ -131,7 +138,7 @@ func TestDaemon_WatcherTriggersApply(t *testing.T) {
 
 func TestDaemon_PollerFallback(t *testing.T) {
 	ext := &mockPollerExt{
-		mockExt:  mockExt{id: "package:git", inSync: true},
+		mockExt:  *newMockExt("package:git", true),
 		interval: 50 * time.Millisecond,
 	}
 
@@ -148,7 +155,7 @@ func TestDaemon_PollerFallback(t *testing.T) {
 
 	go func() {
 		time.Sleep(75 * time.Millisecond)
-		ext.inSync = false
+		ext.inSync.Store(false)
 	}()
 
 	d.Run(ctx)
@@ -159,7 +166,7 @@ func TestDaemon_PollerFallback(t *testing.T) {
 }
 
 func TestDaemon_DefaultPollInterval(t *testing.T) {
-	ext := &mockExt{id: "exec:check", inSync: true}
+	ext := newMockExt("exec:check", true)
 
 	g := graph.New()
 	g.AddNode(ext)
@@ -175,7 +182,7 @@ func TestDaemon_DefaultPollInterval(t *testing.T) {
 
 	go func() {
 		time.Sleep(75 * time.Millisecond)
-		ext.inSync = false
+		ext.inSync.Store(false)
 	}()
 
 	d.Run(ctx)
@@ -234,19 +241,19 @@ type mockTransientFailExt struct {
 	id        string
 	failUntil int32
 	callCount atomic.Int32
-	inSync    bool
+	inSync    atomic.Bool
 }
 
 func (m *mockTransientFailExt) ID() string { return m.id }
 func (m *mockTransientFailExt) Check(_ context.Context) (*extensions.State, error) {
-	return &extensions.State{InSync: m.inSync}, nil
+	return &extensions.State{InSync: m.inSync.Load()}, nil
 }
 func (m *mockTransientFailExt) Apply(_ context.Context) (*extensions.Result, error) {
 	n := m.callCount.Add(1)
 	if n <= m.failUntil {
 		return nil, fmt.Errorf("transient failure %d", n)
 	}
-	m.inSync = true
+	m.inSync.Store(true)
 	return &extensions.Result{Status: extensions.StatusChanged, Changed: true}, nil
 }
 func (m *mockTransientFailExt) String() string { return m.id }
@@ -272,8 +279,8 @@ func TestDaemon_RetryResetsOnSuccess(t *testing.T) {
 	ext := &mockTransientFailExt{
 		id:        "file:/etc/test",
 		failUntil: 2,
-		inSync:    false,
 	}
+	// inSync defaults to false (atomic.Bool zero value)
 
 	g := graph.New()
 	g.AddNode(ext)
@@ -297,7 +304,7 @@ func TestDaemon_RetryResetsOnSuccess(t *testing.T) {
 
 func TestDaemon_OnceExitsAfterConvergence(t *testing.T) {
 	ext := &mockWatcherExt{
-		mockExt: mockExt{id: "file:/etc/test", inSync: true},
+		mockExt: *newMockExt("file:/etc/test", true),
 		watchFn: func(ctx context.Context, _ chan<- extensions.Event) error {
 			<-ctx.Done()
 			return nil
