@@ -16,10 +16,10 @@ var (
 	maxRetries int
 )
 
-var watchCmd = &cobra.Command{
-	Use:   "watch [blueprint]",
-	Short: "Watch resources for drift and re-converge continuously",
-	Long:  "Run as a persistent daemon that watches all resources for state drift and re-converges immediately. Use --once to exit after initial convergence.",
+var serveCmd = &cobra.Command{
+	Use:   "serve [blueprint]",
+	Short: "Run as a persistent service, re-converging on drift",
+	Long:  "Run as a persistent daemon that monitors all resources for state drift and re-converges immediately. Use --once to exit after initial convergence.",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		printer := makePrinter()
@@ -50,7 +50,7 @@ var watchCmd = &cobra.Command{
 }
 
 func init() {
-	watchCmd.Flags().BoolVar(&once, "once", false, "exit after initial convergence (CI/Packer mode)")
-	watchCmd.Flags().IntVar(&maxRetries, "max-retries", 3, "max retries before marking a resource noncompliant")
-	rootCmd.AddCommand(watchCmd)
+	serveCmd.Flags().BoolVar(&once, "once", false, "exit after initial convergence (CI/Packer mode)")
+	serveCmd.Flags().IntVar(&maxRetries, "max-retries", 3, "max retries before marking a resource noncompliant")
+	rootCmd.AddCommand(serveCmd)
 }
