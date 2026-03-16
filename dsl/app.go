@@ -9,6 +9,7 @@ import (
 
 	"github.com/TsekNet/converge/internal/engine"
 	"github.com/TsekNet/converge/internal/graph"
+	"github.com/TsekNet/converge/internal/graph/autoedge"
 	"github.com/TsekNet/converge/internal/output"
 	"github.com/TsekNet/converge/internal/version"
 )
@@ -86,39 +87,36 @@ func (a *App) BuildGraph(name string) (*graph.Graph, error) {
 		return nil, err
 	}
 
+	if err := autoedge.AddAutoEdges(run.Graph()); err != nil {
+		return nil, fmt.Errorf("auto-edges: %w", err)
+	}
+
 	return run.Graph(), nil
 }
 
 func (a *App) RunPlan(name string, printer output.Printer) (int, error) {
-	entry, ok := a.blueprints[name]
-	if !ok {
+	if _, ok := a.blueprints[name]; !ok {
 		return 11, fmt.Errorf("blueprint %q not found", name)
 	}
-
-	run := newRun(a)
-	if err := runBlueprint(entry.fn, run); err != nil {
+	g, err := a.BuildGraph(name)
+	if err != nil {
 		return 1, err
 	}
-
-	return engine.RunPlanDAG(run.Graph(), printer, a.EngineOpts)
+	return engine.RunPlanDAG(g, printer, a.EngineOpts)
 }
 
 func (a *App) RunApply(name string, printer output.Printer) (int, error) {
-	entry, ok := a.blueprints[name]
-	if !ok {
+	if _, ok := a.blueprints[name]; !ok {
 		return 11, fmt.Errorf("blueprint %q not found", name)
 	}
-
 	if !isRoot() {
 		return 10, fmt.Errorf("converge apply requires root/administrator privileges")
 	}
-
-	run := newRun(a)
-	if err := runBlueprint(entry.fn, run); err != nil {
+	g, err := a.BuildGraph(name)
+	if err != nil {
 		return 1, err
 	}
-
-	return engine.RunApplyDAG(run.Graph(), printer, a.EngineOpts)
+	return engine.RunApplyDAG(g, printer, a.EngineOpts)
 }
 
 // runBlueprint executes a blueprint function and recovers panics (e.g.
