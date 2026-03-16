@@ -3,6 +3,7 @@ module github.com/TsekNet/converge
 go 1.26.0
 
 require (
+	github.com/godbus/dbus/v5 v5.2.2
 	github.com/google/deck v1.1.0
 	github.com/google/nftables v0.3.0
 	github.com/heimdalr/dag v1.5.0

@@ -73,13 +73,29 @@ func TestApp_RunPlan_DuplicateResources(t *testing.T) {
 	}
 }
 
-func TestApp_RunApply_NotFound(t *testing.T) {
+func TestApp_BuildGraph_NotFound(t *testing.T) {
 	app := New()
-	code, err := app.RunApply("missing", &testPrinter{})
+	_, err := app.BuildGraph("missing")
 	if err == nil {
-		t.Fatal("expected error")
+		t.Fatal("expected error for missing blueprint")
 	}
-	if code != 11 {
-		t.Errorf("exit code = %d, want 11", code)
+}
+
+func TestApp_BuildGraph_AutoEdges(t *testing.T) {
+	app := New()
+	app.Register("test", "auto-edge test", func(r *Run) {
+		r.Package("nginx", PackageOpts{State: Present})
+		r.Service("nginx", ServiceOpts{State: Running})
+	})
+
+	g, err := app.BuildGraph("test")
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+
+	// Auto-edge should create service:nginx -> package:nginx.
+	layers, _ := g.TopologicalLayers()
+	if len(layers) != 2 {
+		t.Fatalf("got %d layers, want 2 (package then service)", len(layers))
 	}
 }

@@ -3,8 +3,6 @@ package dsl
 import (
 	"fmt"
 	"maps"
-	"os"
-	"runtime"
 	"slices"
 
 	"github.com/TsekNet/converge/internal/engine"
@@ -106,20 +104,6 @@ func (a *App) RunPlan(name string, printer output.Printer) (int, error) {
 	return engine.RunPlanDAG(g, printer, a.EngineOpts)
 }
 
-func (a *App) RunApply(name string, printer output.Printer) (int, error) {
-	if _, ok := a.blueprints[name]; !ok {
-		return exit.NotFound, fmt.Errorf("blueprint %q not found", name)
-	}
-	if !isRoot() {
-		return exit.NotRoot, fmt.Errorf("converge apply requires root/administrator privileges")
-	}
-	g, err := a.BuildGraph(name)
-	if err != nil {
-		return exit.Error, err
-	}
-	return engine.RunApplyDAG(g, printer, a.EngineOpts)
-}
-
 // runBlueprint executes a blueprint function and recovers panics (e.g.
 // duplicate resources, missing dependencies) as errors.
 func runBlueprint(fn Blueprint, run *Run) (err error) {
@@ -132,14 +116,3 @@ func runBlueprint(fn Blueprint, run *Run) (err error) {
 	return nil
 }
 
-func isRoot() bool {
-	if runtime.GOOS == "windows" {
-		f, err := os.Open("\\\\.\\PHYSICALDRIVE0")
-		if err != nil {
-			return false
-		}
-		f.Close()
-		return true
-	}
-	return os.Geteuid() == 0
-}

@@ -23,18 +23,6 @@ func DefaultOptions() Options {
 	return Options{Timeout: 5 * time.Minute, Parallel: 1}
 }
 
-// CheckDuplicates detects resources with the same ID declared in a blueprint.
-func CheckDuplicates(resources []extensions.Extension) error {
-	seen := make(map[string]bool, len(resources))
-	for _, r := range resources {
-		if seen[r.ID()] {
-			return fmt.Errorf("duplicate resource: %s", r.ID())
-		}
-		seen[r.ID()] = true
-	}
-	return nil
-}
-
 func withTimeout(parent context.Context, d time.Duration) (context.Context, context.CancelFunc) {
 	if d > 0 {
 		return context.WithTimeout(parent, d)
@@ -126,71 +114,6 @@ func applyOne(ctx context.Context, r extensions.Extension, timeout time.Duration
 	}
 	result.Duration = time.Since(start)
 	return applyResult{r, result}
-}
-
-// RunApply checks and applies changes for all resources.
-func RunApply(resources []extensions.Extension, printer output.Printer, opts Options) (int, error) {
-	ctx := context.Background()
-	start := time.Now()
-	changed, ok, failed := 0, 0, 0
-
-	setMaxNameLen(resources, printer)
-
-	results := make([]applyResult, len(resources))
-
-	if opts.Parallel > 1 {
-		sem := make(chan struct{}, opts.Parallel)
-		var wg sync.WaitGroup
-		for i, r := range resources {
-			wg.Add(1)
-			sem <- struct{}{}
-			go func(idx int, res extensions.Extension) {
-				defer wg.Done()
-				defer func() { <-sem }()
-				results[idx] = applyOne(ctx, res, opts.Timeout)
-			}(i, r)
-		}
-		wg.Wait()
-	} else {
-		for i, r := range resources {
-			results[i] = applyOne(ctx, r, opts.Timeout)
-		}
-	}
-
-	for i, ar := range results {
-		printer.ApplyStart(ar.ext, i+1, len(resources))
-		printer.ApplyResult(ar.ext, ar.result)
-
-		switch ar.result.Status {
-		case extensions.StatusOK:
-			ok++
-		case extensions.StatusChanged:
-			changed++
-		default:
-			failed++
-			if isCritical(ar.ext) {
-				deck.Errorf("critical resource failed: %s", ar.ext.ID())
-				printer.Summary(changed, ok, failed, changed+ok+failed, time.Since(start).Milliseconds())
-				return exit.PartialFail, fmt.Errorf("critical resource %s failed", ar.ext.ID())
-			}
-		}
-	}
-
-	total := changed + ok + failed
-	printer.Summary(changed, ok, failed, total, time.Since(start).Milliseconds())
-
-	switch {
-	case total == 0:
-		return exit.OK, nil
-	case failed == total:
-		return exit.AllFailed, nil
-	case failed > 0:
-		return exit.PartialFail, nil
-	case changed > 0:
-		return exit.Changed, nil
-	default:
-		return exit.OK, nil
-	}
 }
 
 type nameAware interface {

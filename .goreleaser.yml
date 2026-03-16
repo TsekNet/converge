@@ -32,8 +32,21 @@ builds:
       - -X github.com/TsekNet/converge/internal/version.Date={{.Date}}
 
 archives:
-  - format: binary
+  - formats:
+      - binary
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+nfpms:
+  - id: converge
+    package_name: converge
+    vendor: TsekNet
+    homepage: https://github.com/TsekNet/converge
+    maintainer: Dan Tsekhanskiy <admin@tseknet.com>
+    description: Desired-state configuration, compiled. One binary. Every platform.
+    license: MIT
+    formats:
+      - deb
+    bindir: /usr/local/bin
 
 checksum:
   name_template: "checksums.txt"
