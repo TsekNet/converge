@@ -156,7 +156,7 @@ func (p *TerminalPrinter) PlanSummary(pending, ok, total int) {
 			colorYellow, pending, colorReset,
 			colorGreen, ok, colorReset,
 			colorDim, total, colorReset)
-		fmt.Printf("%sRun %ssudo converge serve --once%s%s to apply.%s\n",
+		fmt.Printf("%sRun %sconverge serve --timeout 1s%s%s to apply.%s\n",
 			colorDim, colorWhite, colorReset, colorDim, colorReset)
 	}
 	fmt.Println()
