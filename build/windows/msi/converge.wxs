@@ -35,10 +35,9 @@
           <ServiceControl
             Id="ConvergeServiceControl"
             Name="converge"
-            Start="install"
             Stop="both"
             Remove="uninstall"
-            Wait="yes" />
+            Wait="no" />
         </Component>
         <Component Id="CleanupDir" Guid="F6A7B8C9-D012-3456-EF01-789012CDEF01">
           <RemoveFolder Id="RemoveConvergeDir" On="uninstall" />
