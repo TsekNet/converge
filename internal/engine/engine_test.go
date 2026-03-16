@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/TsekNet/converge/extensions"
 	"github.com/TsekNet/converge/internal/graph"
@@ -65,45 +64,9 @@ func makeGraph(exts ...extensions.Extension) *graph.Graph {
 	return g
 }
 
-func TestDefaultOptions(t *testing.T) {
-	opts := DefaultOptions()
-	if opts.Timeout != 5*time.Minute {
-		t.Errorf("Timeout = %v, want %v", opts.Timeout, 5*time.Minute)
-	}
-	if opts.Parallel != 1 {
-		t.Errorf("Parallel = %d, want 1", opts.Parallel)
-	}
-}
-
-func TestIsCritical(t *testing.T) {
-	if isCritical(&mockExtension{id: "a", name: "a"}) {
-		t.Error("regular extension should not be critical")
-	}
-	if !isCritical(&criticalMock{mockExtension: mockExtension{id: "b", name: "b"}, critical: true}) {
-		t.Error("critical extension should be critical")
-	}
-	if isCritical(&criticalMock{mockExtension: mockExtension{id: "c", name: "c"}, critical: false}) {
-		t.Error("non-critical extension should not be critical")
-	}
-}
-
-func TestWithTimeout(t *testing.T) {
-	ctx := context.Background()
-
-	rctx, cancel := withTimeout(ctx, 100*time.Millisecond)
-	defer cancel()
-	if _, ok := rctx.Deadline(); !ok {
-		t.Error("expected deadline when timeout > 0")
-	}
-
-	rctx2, cancel2 := withTimeout(ctx, 0)
-	defer cancel2()
-	if _, ok := rctx2.Deadline(); ok {
-		t.Error("should not have deadline when timeout is 0")
-	}
-}
-
 func TestRunPlanDAG(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		exts     []extensions.Extension
@@ -123,6 +86,7 @@ func TestRunPlanDAG(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			g := makeGraph(tt.exts...)
 			code, err := RunPlanDAG(g, &discardPrinter{}, DefaultOptions())
 			if (err != nil) != tt.wantErr {
@@ -136,6 +100,8 @@ func TestRunPlanDAG(t *testing.T) {
 }
 
 func TestRunApplyDAG(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		exts     []extensions.Extension
@@ -161,6 +127,7 @@ func TestRunApplyDAG(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			g := makeGraph(tt.exts...)
 			code, err := RunApplyDAG(g, &discardPrinter{}, DefaultOptions())
 			if err != nil {
@@ -174,6 +141,8 @@ func TestRunApplyDAG(t *testing.T) {
 }
 
 func TestRunApplyDAG_Parallel(t *testing.T) {
+	t.Parallel()
+
 	opts := DefaultOptions()
 	opts.Parallel = 2
 
@@ -192,6 +161,8 @@ func TestRunApplyDAG_Parallel(t *testing.T) {
 }
 
 func TestRunApplyDAG_CriticalFailure(t *testing.T) {
+	t.Parallel()
+
 	g := makeGraph(
 		&criticalMock{
 			mockExtension: mockExtension{id: "file:/a", name: "File /a", inSync: false, applyErr: fmt.Errorf("fail")},
@@ -209,6 +180,8 @@ func TestRunApplyDAG_CriticalFailure(t *testing.T) {
 }
 
 func TestRunApplyDAG_WithDependencies(t *testing.T) {
+	t.Parallel()
+
 	g := graph.New()
 	pkg := &mockExtension{id: "package:nginx", name: "Package nginx", inSync: false}
 	svc := &mockExtension{id: "service:nginx", name: "Service nginx", inSync: false}

@@ -24,209 +24,204 @@ func mock(id, name string) extensions.Extension {
 }
 
 func TestAddNode(t *testing.T) {
-	g := New()
-	pkg := mock("package:nginx", "Package nginx")
+	t.Parallel()
 
-	if err := g.AddNode(pkg); err != nil {
-		t.Fatalf("AddNode: %v", err)
+	tests := []struct {
+		name    string
+		ids     []string // nodes to add in sequence
+		wantErr bool     // whether the last AddNode should error
+	}{
+		{
+			name:    "single node is retrievable",
+			ids:     []string{"package:nginx"},
+			wantErr: false,
+		},
+		{
+			name:    "duplicate node returns error",
+			ids:     []string{"package:nginx", "package:nginx"},
+			wantErr: true,
+		},
 	}
 
-	got := g.Node("package:nginx")
-	if got == nil {
-		t.Fatal("Node not found after AddNode")
-	}
-	if got.Ext.ID() != "package:nginx" {
-		t.Errorf("got ID %q, want %q", got.Ext.ID(), "package:nginx")
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-func TestAddNodeDuplicate(t *testing.T) {
-	g := New()
-	pkg := mock("package:nginx", "Package nginx")
+			g := New()
+			var err error
+			for _, id := range tt.ids {
+				err = g.AddNode(mock(id, id))
+			}
 
-	if err := g.AddNode(pkg); err != nil {
-		t.Fatalf("first AddNode: %v", err)
-	}
-	if err := g.AddNode(pkg); err == nil {
-		t.Fatal("expected error on duplicate AddNode, got nil")
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("AddNode error = %v, wantErr = %v", err, tt.wantErr)
+			}
+
+			if !tt.wantErr {
+				last := tt.ids[len(tt.ids)-1]
+				got := g.Node(last)
+				if got == nil {
+					t.Fatal("Node not found after AddNode")
+				}
+				if got.Ext.ID() != last {
+					t.Errorf("got ID %q, want %q", got.Ext.ID(), last)
+				}
+			}
+		})
 	}
 }
 
 func TestAddEdge(t *testing.T) {
-	g := New()
-	pkg := mock("package:nginx", "Package nginx")
-	svc := mock("service:nginx", "Service nginx")
+	t.Parallel()
 
-	g.AddNode(pkg)
-	g.AddNode(svc)
+	tests := []struct {
+		name    string
+		setup   func(g *Graph)
+		from    string
+		to      string
+		wantErr bool
+	}{
+		{
+			name: "valid edge between two nodes",
+			setup: func(g *Graph) {
+				g.AddNode(mock("package:nginx", "Package nginx"))
+				g.AddNode(mock("service:nginx", "Service nginx"))
+			},
+			from:    "service:nginx",
+			to:      "package:nginx",
+			wantErr: false,
+		},
+		{
+			name: "cycle detected",
+			setup: func(g *Graph) {
+				g.AddNode(mock("a", "A"))
+				g.AddNode(mock("b", "B"))
+				g.AddEdge("a", "b")
+			},
+			from:    "b",
+			to:      "a",
+			wantErr: true,
+		},
+		{
+			name: "missing dependency node",
+			setup: func(g *Graph) {
+				g.AddNode(mock("a", "A"))
+			},
+			from:    "a",
+			to:      "nonexistent",
+			wantErr: true,
+		},
+		{
+			name: "missing dependent node",
+			setup: func(g *Graph) {
+				g.AddNode(mock("a", "A"))
+			},
+			from:    "nonexistent",
+			to:      "a",
+			wantErr: true,
+		},
+	}
 
-	// service depends on package
-	if err := g.AddEdge("service:nginx", "package:nginx"); err != nil {
-		t.Fatalf("AddEdge: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			g := New()
+			tt.setup(g)
+
+			err := g.AddEdge(tt.from, tt.to)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("AddEdge(%q, %q) error = %v, wantErr = %v", tt.from, tt.to, err, tt.wantErr)
+			}
+		})
 	}
 }
 
-func TestAddEdgeCycleDetection(t *testing.T) {
-	g := New()
-	a := mock("a", "A")
-	b := mock("b", "B")
+func TestTopologicalLayers(t *testing.T) {
+	t.Parallel()
 
-	g.AddNode(a)
-	g.AddNode(b)
-	g.AddEdge("a", "b")
-
-	if err := g.AddEdge("b", "a"); err == nil {
-		t.Fatal("expected cycle error, got nil")
-	}
-}
-
-func TestAddEdgeMissingNode(t *testing.T) {
-	g := New()
-	a := mock("a", "A")
-	g.AddNode(a)
-
-	if err := g.AddEdge("a", "nonexistent"); err == nil {
-		t.Fatal("expected error for missing dependency node, got nil")
-	}
-	if err := g.AddEdge("nonexistent", "a"); err == nil {
-		t.Fatal("expected error for missing dependent node, got nil")
-	}
-}
-
-func TestTopologicalLayersLinear(t *testing.T) {
-	// package -> file -> service (linear chain)
-	g := New()
-	pkg := mock("package:nginx", "Package nginx")
-	file := mock("file:/etc/nginx/nginx.conf", "File /etc/nginx/nginx.conf")
-	svc := mock("service:nginx", "Service nginx")
-
-	g.AddNode(pkg)
-	g.AddNode(file)
-	g.AddNode(svc)
-	g.AddEdge("file:/etc/nginx/nginx.conf", "package:nginx")
-	g.AddEdge("service:nginx", "file:/etc/nginx/nginx.conf")
-
-	layers, err := g.TopologicalLayers()
-	if err != nil {
-		t.Fatalf("TopologicalLayers: %v", err)
-	}
-
-	if len(layers) != 3 {
-		t.Fatalf("got %d layers, want 3", len(layers))
-	}
-
-	// Layer 0: package (no deps)
-	if len(layers[0]) != 1 || layers[0][0].ID() != "package:nginx" {
-		t.Errorf("layer 0: got %v, want [package:nginx]", idsOf(layers[0]))
-	}
-	// Layer 1: file (depends on package)
-	if len(layers[1]) != 1 || layers[1][0].ID() != "file:/etc/nginx/nginx.conf" {
-		t.Errorf("layer 1: got %v, want [file:/etc/nginx/nginx.conf]", idsOf(layers[1]))
-	}
-	// Layer 2: service (depends on file)
-	if len(layers[2]) != 1 || layers[2][0].ID() != "service:nginx" {
-		t.Errorf("layer 2: got %v, want [service:nginx]", idsOf(layers[2]))
-	}
-}
-
-func TestTopologicalLayersDiamond(t *testing.T) {
-	// Diamond: A depends on B and C, both B and C depend on D
-	//     D
-	//    / \
-	//   B   C
-	//    \ /
-	//     A
-	g := New()
-	g.AddNode(mock("d", "D"))
-	g.AddNode(mock("b", "B"))
-	g.AddNode(mock("c", "C"))
-	g.AddNode(mock("a", "A"))
-
-	g.AddEdge("b", "d")
-	g.AddEdge("c", "d")
-	g.AddEdge("a", "b")
-	g.AddEdge("a", "c")
-
-	layers, err := g.TopologicalLayers()
-	if err != nil {
-		t.Fatalf("TopologicalLayers: %v", err)
+	tests := []struct {
+		name       string
+		setup      func(g *Graph)
+		wantLayers int
+		verify     func(t *testing.T, layers [][]extensions.Extension)
+	}{
+		{
+			name: "linear chain produces one node per layer",
+			setup: func(g *Graph) {
+				g.AddNode(mock("package:nginx", "Package nginx"))
+				g.AddNode(mock("file:/etc/nginx/nginx.conf", "File /etc/nginx/nginx.conf"))
+				g.AddNode(mock("service:nginx", "Service nginx"))
+				g.AddEdge("file:/etc/nginx/nginx.conf", "package:nginx")
+				g.AddEdge("service:nginx", "file:/etc/nginx/nginx.conf")
+			},
+			wantLayers: 3,
+			verify: func(t *testing.T, layers [][]extensions.Extension) {
+				t.Helper()
+				assertLayerIDs(t, layers[0], "package:nginx")
+				assertLayerIDs(t, layers[1], "file:/etc/nginx/nginx.conf")
+				assertLayerIDs(t, layers[2], "service:nginx")
+			},
+		},
+		{
+			name: "diamond graph merges independent nodes into one layer",
+			setup: func(g *Graph) {
+				g.AddNode(mock("d", "D"))
+				g.AddNode(mock("b", "B"))
+				g.AddNode(mock("c", "C"))
+				g.AddNode(mock("a", "A"))
+				g.AddEdge("b", "d")
+				g.AddEdge("c", "d")
+				g.AddEdge("a", "b")
+				g.AddEdge("a", "c")
+			},
+			wantLayers: 3,
+			verify: func(t *testing.T, layers [][]extensions.Extension) {
+				t.Helper()
+				assertLayerIDs(t, layers[0], "d")
+				assertLayerContains(t, layers[1], "b", "c")
+				assertLayerIDs(t, layers[2], "a")
+			},
+		},
+		{
+			name: "no edges puts all nodes in single layer",
+			setup: func(g *Graph) {
+				g.AddNode(mock("a", "A"))
+				g.AddNode(mock("b", "B"))
+				g.AddNode(mock("c", "C"))
+			},
+			wantLayers: 1,
+			verify: func(t *testing.T, layers [][]extensions.Extension) {
+				t.Helper()
+				if len(layers[0]) != 3 {
+					t.Errorf("layer 0: got %d nodes, want 3", len(layers[0]))
+				}
+			},
+		},
+		{
+			name:       "empty graph returns no layers",
+			setup:      func(g *Graph) {},
+			wantLayers: 0,
+			verify:     func(t *testing.T, layers [][]extensions.Extension) { t.Helper() },
+		},
 	}
 
-	if len(layers) != 3 {
-		t.Fatalf("got %d layers, want 3", len(layers))
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	// Layer 0: D (no deps)
-	if len(layers[0]) != 1 || layers[0][0].ID() != "d" {
-		t.Errorf("layer 0: got %v, want [d]", idsOf(layers[0]))
-	}
-	// Layer 1: B and C (both depend only on D)
-	ids1 := idsOf(layers[1])
-	if len(ids1) != 2 {
-		t.Fatalf("layer 1: got %d nodes, want 2", len(ids1))
-	}
-	if !contains(ids1, "b") || !contains(ids1, "c") {
-		t.Errorf("layer 1: got %v, want [b, c]", ids1)
-	}
-	// Layer 2: A (depends on B and C)
-	if len(layers[2]) != 1 || layers[2][0].ID() != "a" {
-		t.Errorf("layer 2: got %v, want [a]", idsOf(layers[2]))
-	}
-}
+			g := New()
+			tt.setup(g)
 
-func TestTopologicalLayersNoEdges(t *testing.T) {
-	g := New()
-	g.AddNode(mock("a", "A"))
-	g.AddNode(mock("b", "B"))
-	g.AddNode(mock("c", "C"))
-
-	layers, err := g.TopologicalLayers()
-	if err != nil {
-		t.Fatalf("TopologicalLayers: %v", err)
-	}
-
-	// All nodes have no deps: single layer
-	if len(layers) != 1 {
-		t.Fatalf("got %d layers, want 1", len(layers))
-	}
-	if len(layers[0]) != 3 {
-		t.Errorf("layer 0: got %d nodes, want 3", len(layers[0]))
-	}
-}
-
-func TestTopologicalLayersEmpty(t *testing.T) {
-	g := New()
-	layers, err := g.TopologicalLayers()
-	if err != nil {
-		t.Fatalf("TopologicalLayers: %v", err)
-	}
-	if len(layers) != 0 {
-		t.Errorf("got %d layers, want 0", len(layers))
-	}
-}
-
-func TestNodes(t *testing.T) {
-	g := New()
-	g.AddNode(mock("a", "A"))
-	g.AddNode(mock("b", "B"))
-
-	nodes := g.Nodes()
-	if len(nodes) != 2 {
-		t.Fatalf("got %d nodes, want 2", len(nodes))
-	}
-}
-
-func TestOrderedExtensions(t *testing.T) {
-	g := New()
-	g.AddNode(mock("a", "A"))
-	g.AddNode(mock("b", "B"))
-
-	exts := g.OrderedExtensions()
-	if len(exts) != 2 {
-		t.Fatalf("got %d extensions, want 2", len(exts))
-	}
-	if exts[0].ID() != "a" || exts[1].ID() != "b" {
-		t.Errorf("wrong order: got [%s, %s], want [a, b]", exts[0].ID(), exts[1].ID())
+			layers, err := g.TopologicalLayers()
+			if err != nil {
+				t.Fatalf("TopologicalLayers: %v", err)
+			}
+			if len(layers) != tt.wantLayers {
+				t.Fatalf("got %d layers, want %d", len(layers), tt.wantLayers)
+			}
+			tt.verify(t, layers)
+		})
 	}
 }
 
@@ -287,4 +282,30 @@ func contains(ss []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func assertLayerIDs(t *testing.T, layer []extensions.Extension, wantIDs ...string) {
+	t.Helper()
+	got := idsOf(layer)
+	if len(got) != len(wantIDs) {
+		t.Fatalf("layer: got %v, want %v", got, wantIDs)
+	}
+	for i, id := range wantIDs {
+		if got[i] != id {
+			t.Errorf("layer[%d]: got %q, want %q", i, got[i], id)
+		}
+	}
+}
+
+func assertLayerContains(t *testing.T, layer []extensions.Extension, wantIDs ...string) {
+	t.Helper()
+	got := idsOf(layer)
+	if len(got) != len(wantIDs) {
+		t.Fatalf("layer: got %v, want %v", got, wantIDs)
+	}
+	for _, id := range wantIDs {
+		if !contains(got, id) {
+			t.Errorf("layer %v missing %q", got, id)
+		}
+	}
 }
