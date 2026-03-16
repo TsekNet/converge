@@ -137,7 +137,6 @@ func (f *Firewall) buildRuleString() string {
 		"Action=" + winAction[f.Action],
 		"Active=TRUE",
 		"Dir=" + winDirection[f.Direction],
-		"Profile=Public|Profile=Private|Profile=Domain",
 		fmt.Sprintf("Protocol=%d", winProtocol[f.Protocol]),
 	}
 
@@ -166,7 +165,7 @@ func (f *Firewall) buildRuleString() string {
 		}
 	}
 
-	parts = append(parts, "Name="+f.Name, "Desc=Managed by converge")
+	parts = append(parts, "Name="+f.Name, "Desc=Managed by converge", "")
 	return strings.Join(parts, "|")
 }
 
