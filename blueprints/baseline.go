@@ -8,7 +8,12 @@ func Baseline(r *dsl.Run) {
 	p := r.Platform()
 
 	// Common packages across all platforms.
-	for _, pkg := range []string{"git", "curl", "neovim"} {
+	// Winget requires package IDs (e.g. Git.Git), other managers use short names.
+	packages := []string{"git", "curl", "neovim"}
+	if p.PkgManager == "winget" {
+		packages = []string{"Git.Git", "cURL.cURL", "Neovim.Neovim"}
+	}
+	for _, pkg := range packages {
 		r.Package(pkg, dsl.PackageOpts{State: dsl.Present})
 	}
 

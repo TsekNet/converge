@@ -12,8 +12,16 @@ type wingetManager struct{}
 func (w *wingetManager) Name() string { return "winget" }
 
 func (w *wingetManager) IsInstalled(ctx context.Context, name string) (bool, error) {
-	cmd := exec.CommandContext(ctx, "winget", "list", "--exact", "-q", name)
-	out, err := cmd.Output()
+	// Try exact ID match first, then fall back to name match.
+	cmd := exec.CommandContext(ctx, "winget", "list", "--id", name, "--exact", "--accept-source-agreements")
+	out, err := cmd.CombinedOutput()
+	if err == nil && strings.Contains(strings.ToLower(string(out)), strings.ToLower(name)) {
+		return true, nil
+	}
+
+	// Fall back to name search.
+	cmd = exec.CommandContext(ctx, "winget", "list", "--name", name, "--exact", "--accept-source-agreements")
+	out, err = cmd.CombinedOutput()
 	if err != nil {
 		return false, nil
 	}
@@ -21,7 +29,9 @@ func (w *wingetManager) IsInstalled(ctx context.Context, name string) (bool, err
 }
 
 func (w *wingetManager) Install(ctx context.Context, name string) error {
-	cmd := exec.CommandContext(ctx, "winget", "install", "--exact", "--accept-package-agreements", "--accept-source-agreements", "-h", name)
+	// Use --id for exact match, avoiding "multiple packages found" errors.
+	cmd := exec.CommandContext(ctx, "winget", "install", "--id", name, "--exact",
+		"--accept-package-agreements", "--accept-source-agreements", "--silent")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("winget install %s: %s: %w", name, strings.TrimSpace(string(out)), err)
@@ -30,7 +40,7 @@ func (w *wingetManager) Install(ctx context.Context, name string) error {
 }
 
 func (w *wingetManager) Remove(ctx context.Context, name string) error {
-	cmd := exec.CommandContext(ctx, "winget", "uninstall", "--exact", "-h", name)
+	cmd := exec.CommandContext(ctx, "winget", "uninstall", "--id", name, "--exact", "--silent")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("winget uninstall %s: %s: %w", name, strings.TrimSpace(string(out)), err)
