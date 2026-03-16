@@ -5,7 +5,6 @@ package registry
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/TsekNet/converge/extensions"
@@ -40,13 +39,12 @@ func (r *Registry) Watch(ctx context.Context, events chan<- extensions.Event) er
 		default:
 		}
 
-		// REG_NOTIFY_CHANGE_LAST_SET = value changes.
 		err = windows.RegNotifyChangeKeyValue(
 			windows.Handle(key),
 			false,
 			windows.REG_NOTIFY_CHANGE_LAST_SET,
 			event,
-			true, // async
+			true,
 		)
 		if err != nil {
 			return fmt.Errorf("RegNotifyChangeKeyValue: %w", err)
@@ -75,35 +73,12 @@ func (r *Registry) Watch(ctx context.Context, events chan<- extensions.Event) er
 		select {
 		case events <- extensions.Event{
 			ResourceID: r.ID(),
-			Kind: extensions.EventWatch, Detail: "RegNotifyChangeKeyValue",
+			Kind:       extensions.EventWatch,
+			Detail:     "RegNotifyChangeKeyValue",
 			Time:       time.Now(),
 		}:
 		case <-ctx.Done():
 			return nil
 		}
 	}
-}
-
-// parseKeyPath splits "HKLM\SOFTWARE\...\ValueName" into root key and subkey.
-func parseKeyPath(path string) (winreg.Key, string, error) {
-	parts := strings.SplitN(path, `\`, 2)
-	if len(parts) < 2 {
-		return 0, "", fmt.Errorf("invalid registry path: %s", path)
-	}
-
-	var root winreg.Key
-	switch strings.ToUpper(parts[0]) {
-	case "HKLM", "HKEY_LOCAL_MACHINE":
-		root = winreg.LOCAL_MACHINE
-	case "HKCU", "HKEY_CURRENT_USER":
-		root = winreg.CURRENT_USER
-	case "HKCR", "HKEY_CLASSES_ROOT":
-		root = winreg.CLASSES_ROOT
-	case "HKU", "HKEY_USERS":
-		root = winreg.USERS
-	default:
-		return 0, "", fmt.Errorf("unknown registry root: %s", parts[0])
-	}
-
-	return root, parts[1], nil
 }
