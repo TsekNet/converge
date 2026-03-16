@@ -2,6 +2,7 @@ package condition_test
 
 import (
 	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -105,10 +106,8 @@ func TestFileExists_Wait_CtxCancel(t *testing.T) {
 func TestNetworkReachable_Met(t *testing.T) {
 	t.Parallel()
 
-	t.Run("reachable", func(t *testing.T) {
+	t.Run("unreachable", func(t *testing.T) {
 		t.Parallel()
-		// Loopback is always reachable if something listens; use a known port.
-		// Just test the negative case reliably.
 		c := condition.NetworkReachable("240.0.0.1", 9) // TEST-NET, nothing listens
 		met, err := c.Met(context.Background())
 		if err != nil {
@@ -118,6 +117,24 @@ func TestNetworkReachable_Met(t *testing.T) {
 			t.Error("expected Met=false for unreachable host")
 		}
 	})
+
+	t.Run("reachable", func(t *testing.T) {
+		t.Parallel()
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ln.Close()
+		addr := ln.Addr().(*net.TCPAddr)
+		c := condition.NetworkReachable("127.0.0.1", addr.Port)
+		met, err := c.Met(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !met {
+			t.Error("expected Met=true for listening port")
+		}
+	})
 }
 
 func TestNetworkInterface_Met(t *testing.T) {
@@ -125,7 +142,21 @@ func TestNetworkInterface_Met(t *testing.T) {
 
 	t.Run("loopback_up", func(t *testing.T) {
 		t.Parallel()
-		c := condition.NetworkInterface("lo")
+		ifaces, err := net.Interfaces()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var loopback string
+		for _, iface := range ifaces {
+			if iface.Flags&net.FlagLoopback != 0 {
+				loopback = iface.Name
+				break
+			}
+		}
+		if loopback == "" {
+			t.Skip("no loopback interface found")
+		}
+		c := condition.NetworkInterface(loopback)
 		met, err := c.Met(context.Background())
 		if err != nil {
 			t.Fatal(err)
@@ -160,7 +191,7 @@ func TestMountPoint_Met(t *testing.T) {
 			t.Fatal(err)
 		}
 		if met {
-			t.Logf("TempDir is a mount point (unusual but possible in containers/WSL): skipping")
+			t.Skip("TempDir is a mount point (unusual but possible in containers/WSL)")
 		}
 	})
 

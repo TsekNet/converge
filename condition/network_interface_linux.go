@@ -4,23 +4,10 @@ package condition
 
 import (
 	"context"
-	"net"
 	"syscall"
 
 	"golang.org/x/sys/unix"
 )
-
-type networkInterfaceCondition struct {
-	name string
-}
-
-func (c *networkInterfaceCondition) Met(_ context.Context) (bool, error) {
-	iface, err := net.InterfaceByName(c.name)
-	if err != nil {
-		return false, nil //nolint:nilerr // not found = not met
-	}
-	return iface.Flags&net.FlagUp != 0, nil
-}
 
 // Wait opens a netlink socket subscribed to RTMGRP_LINK and unblocks on
 // RTM_NEWLINK / RTM_SETLINK messages, re-checking Met on each.
@@ -58,7 +45,7 @@ func (c *networkInterfaceCondition) Wait(ctx context.Context) error {
 		}
 
 		n, err := unix.Read(fd, buf)
-		if err == unix.EAGAIN || err == unix.EWOULDBLOCK || isTimeout(err) {
+		if err == unix.EAGAIN || err == unix.EWOULDBLOCK || err == unix.ETIMEDOUT {
 			continue
 		}
 		if err != nil {
@@ -73,7 +60,7 @@ func (c *networkInterfaceCondition) Wait(ctx context.Context) error {
 			continue
 		}
 		for _, msg := range msgs {
-			if msg.Header.Type == unix.RTM_NEWLINK || msg.Header.Type == uint16(unix.RTM_SETLINK) {
+			if msg.Header.Type == unix.RTM_NEWLINK || msg.Header.Type == unix.RTM_SETLINK {
 				if met, _ := c.Met(ctx); met {
 					return nil
 				}
@@ -81,17 +68,3 @@ func (c *networkInterfaceCondition) Wait(ctx context.Context) error {
 		}
 	}
 }
-
-func (c *networkInterfaceCondition) String() string {
-	return "network interface " + c.name + " up"
-}
-
-// isTimeout returns true for EAGAIN / EWOULDBLOCK / ETIMEDOUT.
-func isTimeout(err error) bool {
-	errno, ok := err.(unix.Errno)
-	if !ok {
-		return false
-	}
-	return errno == unix.ETIMEDOUT
-}
-

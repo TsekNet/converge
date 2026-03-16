@@ -74,11 +74,10 @@ func New(g *graph.Graph, printer output.Printer, opts Options) *Daemon {
 		if node.Meta.Retry > 0 {
 			rm.setRetryOverride(id, node.Meta.Retry)
 		}
-		// Pre-populate conditionsMet: true for resources without a condition.
+		// Pre-populate conditionsMet true for resources with no condition gate.
+		// Resources with a condition start as false; startWatchers sets them true.
 		if node.Meta.Condition == nil {
 			d.conditionsMet.Store(id, true)
-		} else {
-			d.conditionsMet.Store(id, false)
 		}
 	}
 
@@ -197,6 +196,8 @@ func (d *Daemon) startWatchers(ctx context.Context, eventCh chan extensions.Even
 					}
 					d.conditionsMet.Store(ext.ID(), true)
 					deck.Infof("condition met: %s (%s)", ext.ID(), cond)
+					// Blocking send: a dropped condition-met event means the resource
+					// never converges. ctx guards against deadlock on shutdown.
 					select {
 					case eventCh <- extensions.Event{
 						ResourceID: ext.ID(),
@@ -204,7 +205,7 @@ func (d *Daemon) startWatchers(ctx context.Context, eventCh chan extensions.Even
 						Detail:     "condition met: " + cond.String(),
 						Time:       time.Now(),
 					}:
-					default:
+					case <-ctx.Done():
 					}
 				}(ext, cond)
 			}
@@ -362,10 +363,10 @@ func (d *Daemon) convergeResource(ctx context.Context, ext extensions.Extension,
 		return
 	}
 
-	if result != nil && result.Changed {
-		d.lastChange.Store(time.Now().UnixNano())
-		d.printer.ApplyResult(ext, result)
-	} else if result != nil {
+	if result != nil {
+		if result.Changed {
+			d.lastChange.Store(time.Now().UnixNano())
+		}
 		d.printer.ApplyResult(ext, result)
 	}
 	d.retries.reset(id)

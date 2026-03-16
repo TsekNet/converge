@@ -5,8 +5,6 @@ package condition
 import (
 	"context"
 	"path/filepath"
-	"time"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -40,6 +38,13 @@ func (c *fileExistsCondition) Wait(ctx context.Context) error {
 		return nil
 	}
 
+	// Create the event handle once; reuse it across ReadDirectoryChanges calls.
+	eventHandle, err := windows.CreateEvent(nil, 1, 0, nil)
+	if err != nil {
+		return err
+	}
+	defer windows.CloseHandle(eventHandle)
+
 	buf := make([]byte, 4096)
 	for {
 		select {
@@ -49,52 +54,39 @@ func (c *fileExistsCondition) Wait(ctx context.Context) error {
 		}
 
 		var bytesReturned uint32
-		overlapped := &windows.Overlapped{}
-		overlapped.HEvent, err = windows.CreateEvent(nil, 1, 0, nil)
-		if err != nil {
-			return err
-		}
+		overlapped := &windows.Overlapped{HEvent: eventHandle}
 
-		err = windows.ReadDirectoryChanges(
+		if err := windows.ReadDirectoryChanges(
 			handle,
-			(*windows.FileNotifyInformation)(unsafe.Pointer(&buf[0])),
+			&buf[0],
 			uint32(len(buf)),
-			false, // not subtree
+			false,
 			windows.FILE_NOTIFY_CHANGE_FILE_NAME,
 			&bytesReturned,
 			overlapped,
 			0,
-		)
-		if err != nil {
-			windows.CloseHandle(overlapped.HEvent)
+		); err != nil {
 			return err
 		}
 
 		// Wait for the event with a 500ms timeout to remain ctx-responsive.
-		result, err := windows.WaitForSingleObject(overlapped.HEvent, 500)
-		windows.CloseHandle(overlapped.HEvent)
-
+		result, err := windows.WaitForSingleObject(eventHandle, 500)
 		if err != nil {
 			return err
 		}
 		if result == uint32(windows.WAIT_TIMEOUT) {
-			// Recheck ctx; loop continues with a fresh ReadDirectoryChanges.
+			// Cancel the pending I/O before reissuing ReadDirectoryChanges.
+			windows.CancelIoEx(handle, overlapped)
 			continue
 		}
 
-		// Drain the overlapped result.
 		var transferred uint32
-		windows.GetOverlappedResult(handle, overlapped, &transferred, false)
+		if err := windows.GetOverlappedResult(handle, overlapped, &transferred, false); err != nil {
+			return err
+		}
 
 		if met, _ := c.Met(ctx); met {
 			return nil
-		}
-
-		// Small yield to avoid tight re-issue.
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(50 * time.Millisecond):
 		}
 	}
 }

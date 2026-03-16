@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -84,6 +83,3 @@ func (c *mountPointCondition) Wait(ctx context.Context) error {
 func (c *mountPointCondition) String() string {
 	return "mount point " + c.path
 }
-
-// Suppress unused import warning; windows.MAX_PATH is used above.
-var _ = unsafe.Pointer(nil)

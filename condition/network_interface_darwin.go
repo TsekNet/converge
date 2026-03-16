@@ -4,21 +4,8 @@ package condition
 
 import (
 	"context"
-	"net"
 	"time"
 )
-
-type networkInterfaceCondition struct {
-	name string
-}
-
-func (c *networkInterfaceCondition) Met(_ context.Context) (bool, error) {
-	iface, err := net.InterfaceByName(c.name)
-	if err != nil {
-		return false, nil //nolint:nilerr // not found = not met
-	}
-	return iface.Flags&net.FlagUp != 0, nil
-}
 
 // Wait polls at 2-second intervals. macOS SCNetworkReachability callbacks
 // require a CoreFoundation CFRunLoop and are not accessible from pure Go
@@ -39,8 +26,4 @@ func (c *networkInterfaceCondition) Wait(ctx context.Context) error {
 			}
 		}
 	}
-}
-
-func (c *networkInterfaceCondition) String() string {
-	return "network interface " + c.name + " up"
 }

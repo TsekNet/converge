@@ -31,8 +31,8 @@ We manage 500K+ endpoints across macOS, Windows, and Linux. Every mainstream too
 | Tool | Runtime Required | Language | State Model |
 |-----------|-----------------|----------|-------------|
 | Chef/Cinc | Ruby + gem deps | Ruby DSL | Converge-on-run (server or zero-agent) |
-| Puppet | JVM + Ruby | Puppet DSL | Catalog compiled on server |
-| Ansible | Python 2/3 | YAML + Jinja2 | Push-based, no local agent |
+| Puppet | Ruby (agent); JVM/JRuby (Puppet Server) | Puppet DSL | Catalog compiled locally (`puppet apply`) or on server (agent mode) |
+| Ansible | Python 2/3 | YAML + Jinja2 | Push-based; `ansible-pull` enables cron/pull but is not the standard model |
 | Terraform | None (binary) | HCL | State file (remote or local) |
 | Salt | Python | YAML + Jinja2 | Converge-on-run or push |
 
@@ -389,7 +389,7 @@ These are real bugs, outages, and hours lost managing endpoints with Chef at sca
 | Regex file mutations | `Chef::Util::FileEdit` with fragile regexes | Declarative file content, atomic writes |
 | Inconsistent error handling | Default failure behavior varies by provider (raise vs. warn vs. silent return); `ignore_failure` is available on every resource but requires opting in explicitly | `Critical` flag on every resource; failure behavior is uniform by default |
 | Monolithic recipes | `include_recipe` and custom resource partials exist but are separate concepts with separate lookup paths; LWRP boilerplate raises the cost of decomposition | `Include()` is a plain Go function call; no boilerplate, no separate file lookup |
-| No real unit testing | ChefSpec tests collections, not behavior; Test Kitchen takes 45 min | `go test` with mock Run, subsecond feedback |
+| No real unit testing | ChefSpec tests the compiled resource collection, not converged system state (that is InSpec's role); Test Kitchen integration tests take long to run | `go test` with mock Run, subsecond feedback |
 
 ---
 
