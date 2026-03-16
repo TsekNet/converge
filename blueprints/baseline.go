@@ -43,6 +43,14 @@ func Baseline(r *dsl.Run) {
 		})
 	}
 
+	if p.OS == "windows" {
+		// Windows Time service: safe to manage, always present.
+		r.Service("w32time", dsl.ServiceOpts{
+			State:       dsl.Running,
+			StartupType: "auto",
+		})
+	}
+
 	// Canary rollout: 10% of fleet gets the experimental monitoring agent.
 	if r.InShard(10) {
 		r.Package("converge-telemetry", dsl.PackageOpts{State: dsl.Present})

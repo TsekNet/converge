@@ -12,29 +12,29 @@ type wingetManager struct{}
 func (w *wingetManager) Name() string { return "winget" }
 
 func (w *wingetManager) IsInstalled(ctx context.Context, name string) (bool, error) {
-	// Try exact ID match first, then fall back to name match.
 	cmd := exec.CommandContext(ctx, "winget", "list", "--id", name, "--exact", "--accept-source-agreements")
-	out, err := cmd.CombinedOutput()
-	if err == nil && strings.Contains(strings.ToLower(string(out)), strings.ToLower(name)) {
+	out, _ := cmd.CombinedOutput()
+	// winget list outputs a table with the package ID if installed,
+	// or "No installed package found" if not. Check for the ID in the output
+	// regardless of exit code (winget exit codes are inconsistent).
+	output := string(out)
+	if strings.Contains(output, name) && !strings.Contains(output, "No installed package found") {
 		return true, nil
 	}
-
-	// Fall back to name search.
-	cmd = exec.CommandContext(ctx, "winget", "list", "--name", name, "--exact", "--accept-source-agreements")
-	out, err = cmd.CombinedOutput()
-	if err != nil {
-		return false, nil
-	}
-	return strings.Contains(strings.ToLower(string(out)), strings.ToLower(name)), nil
+	return false, nil
 }
 
 func (w *wingetManager) Install(ctx context.Context, name string) error {
-	// Use --id for exact match, avoiding "multiple packages found" errors.
 	cmd := exec.CommandContext(ctx, "winget", "install", "--id", name, "--exact",
 		"--accept-package-agreements", "--accept-source-agreements", "--silent")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("winget install %s: %s: %w", name, strings.TrimSpace(string(out)), err)
+		output := strings.TrimSpace(string(out))
+		// winget returns non-zero even on "already installed" sometimes.
+		if strings.Contains(output, "already installed") {
+			return nil
+		}
+		return fmt.Errorf("winget install %s: %s: %w", name, output, err)
 	}
 	return nil
 }
