@@ -17,30 +17,40 @@ Blueprints don't *do* anything directly. They declare intent. The engine diffs c
 ## Writing a Blueprint
 
 ```go
-package myblueprint
+package blueprints
 
 import "github.com/TsekNet/converge/dsl"
 
-func Blueprint(r *dsl.Run) {
-    r.File("/etc/motd", dsl.FileOpts{
-        Content: "Welcome to a Converge-managed system\n",
-        Mode:    0644,
-    })
+func Baseline(r *dsl.Run) {
+    p := r.Platform()
 
-    r.Package("git", dsl.PackageOpts{
-        State: dsl.Present,
-    })
+    // Cross-platform: ensure git is installed everywhere
+    r.Package("git", dsl.PackageOpts{State: dsl.Present})
 
-    r.Service("sshd", dsl.ServiceOpts{
-        State:  dsl.Running,
-        Enable: true,
-    })
+    // Platform-specific system banner
+    switch p.OS {
+    case "linux":
+        r.File("/etc/motd", dsl.FileOpts{
+            Content: "Managed by Converge\n",
+            Mode:    0644,
+        })
+        r.Service("sshd", dsl.ServiceOpts{State: dsl.Running, Enable: true})
+    case "darwin":
+        r.File("/etc/motd", dsl.FileOpts{
+            Content: "Managed by Converge\n",
+            Mode:    0644,
+        })
+    case "windows":
+        r.File(`C:\ProgramData\Converge\motd.txt`, dsl.FileOpts{
+            Content: "Managed by Converge\r\n",
+        })
+    }
 }
 ```
 
-This declares three things: a file with specific content and permissions, an installed package, and a running enabled service.
+This declares a cross-platform package, platform-specific banner files, and a Linux service. The engine handles the rest.
 
-Here's a more complete example showing cross-platform logic:
+Here's a more complete example showing cross-platform logic, encrypted secrets, and canary rollouts:
 
 ```go
 package blueprints
@@ -126,9 +136,18 @@ Blueprints are Go code, so platform branching is just `if` statements:
 func Blueprint(r *dsl.Run) {
     p := r.Platform()
 
-    if p.OS == "linux" {
+    switch p.OS {
+    case "linux":
         r.File("/etc/motd", dsl.FileOpts{
             Content: "Linux host managed by Converge\n",
+        })
+    case "darwin":
+        r.File("/etc/motd", dsl.FileOpts{
+            Content: "macOS host managed by Converge\n",
+        })
+    case "windows":
+        r.File(`C:\ProgramData\Converge\motd.txt`, dsl.FileOpts{
+            Content: "Windows host managed by Converge\r\n",
         })
     }
 }
@@ -154,7 +173,68 @@ func Windows(r *dsl.Run) {
 }
 ```
 
-The compiler enforces this -- you can't call `r.Registry()` from a Linux-tagged file. No runtime "skipped" messages.
+The compiler enforces this: you can't call `r.Registry()` from a Linux-tagged file. No runtime "skipped" messages.
+
+---
+
+## Explicit Dependencies with DependsOn
+
+Auto-edges handle most dependency relationships automatically (Service->Package, File->parent Dir). For dependencies that auto-edges cannot detect, use `DependsOn`:
+
+```go
+func Blueprint(r *dsl.Run) {
+    r.Package("postgresql", dsl.PackageOpts{State: dsl.Present})
+
+    r.Exec("db-migrate", dsl.ExecOpts{
+        Command:   "/usr/bin/db-migrate",
+        OnlyIf:    "test -f /var/lib/myapp/.migration-done",
+        Meta: dsl.ResourceMeta{DependsOn: []string{"package:postgresql"}},
+    })
+
+    r.Service("myapp", dsl.ServiceOpts{
+        State:     dsl.Running,
+        Enable:    true,
+        Meta: dsl.ResourceMeta{DependsOn: []string{"exec:db-migrate"}},
+    })
+}
+```
+
+This creates a three-layer DAG: `package:postgresql` -> `exec:db-migrate` -> `service:myapp`. In daemon mode, if the postgresql package drifts (e.g. gets uninstalled), converge reinstalls it and then walks the DAG forward to re-check the migration and service.
+
+---
+
+## Daemon Mode (`converge serve`)
+
+The daemon is the primary way to run converge in production. It performs an initial convergence, then watches for drift via OS events:
+
+```bash
+# Linux
+sudo converge serve baseline
+
+# macOS
+sudo converge serve baseline
+
+# Windows (elevated PowerShell)
+converge.exe serve baseline
+```
+
+What happens:
+
+1. The DAG is built with auto-edges and explicit `DependsOn` relationships
+2. Initial convergence runs all resources in topological order
+3. Per-resource watchers start (inotify for files, dbus for services, etc.)
+4. When drift is detected, the drifted resource is re-checked and its DAG dependents are re-evaluated
+5. On failure, exponential backoff retries up to `--max-retries` (default 3)
+
+For CI/CD or image baking (Packer), use `--once` to converge and exit:
+
+```bash
+# CI pipeline
+sudo converge serve baseline --once --detailed-exit-codes
+
+# Packer provisioner
+sudo converge serve cis --once
+```
 
 ---
 
@@ -219,7 +299,7 @@ All option structs share these common fields:
 ```go
 r.Exec("migrate", dsl.ExecOpts{
     Command:   "/usr/bin/db-migrate",
-    DependsOn: []string{"package:postgresql"},
+    Meta: dsl.ResourceMeta{DependsOn: []string{"package:postgresql"}},
 })
 ```
 
@@ -368,7 +448,7 @@ r.Service("wuauserv", dsl.ServiceOpts{
 
 ### Exec
 
-Run arbitrary commands. Use sparingly -- prefer declarative resources when they exist.
+Run arbitrary commands. Use sparingly: prefer declarative resources when they exist.
 
 ```go
 r.Exec(name string, opts dsl.ExecOpts)
@@ -485,7 +565,7 @@ The `key` is the full registry path, e.g., `HKLM\SOFTWARE\MyApp`.
 
 **Supported root keys:** `HKLM`, `HKCU`, `HKCR`, `HKU`, `HKCC` (and their long forms like `HKEY_LOCAL_MACHINE`).
 
-**API:** `golang.org/x/sys/windows/registry` -- no `reg.exe`.
+**API:** `golang.org/x/sys/windows/registry`: no `reg.exe`.
 
 **Idempotency:** Reads current value via type-appropriate getter and compares. Creates intermediate keys if needed without disturbing existing sibling values.
 
@@ -547,7 +627,7 @@ r.SecurityPolicy(name string, opts dsl.SecurityPolicyOpts)
 | `LockoutDuration` | Lockout duration (seconds) |
 | `LockoutObservationWindow` | Observation window (seconds) |
 
-**API:** `netapi32.dll` `NetUserModalsGet/Set` -- no `secedit.exe`.
+**API:** `netapi32.dll` `NetUserModalsGet/Set`: no `secedit.exe`.
 
 **Examples:**
 
@@ -602,7 +682,7 @@ r.AuditPolicy(name string, opts dsl.AuditPolicyOpts)
 | **Privilege Use** | Non Sensitive Privilege Use, Other Privilege Use Events, Sensitive Privilege Use |
 | **System** | IPsec Driver, Other System Events, Security State Change, Security System Extension, System Integrity |
 
-**API:** `advapi32.dll` `AuditQuerySystemPolicy/AuditSetSystemPolicy` -- no `auditpol.exe`.
+**API:** `advapi32.dll` `AuditQuerySystemPolicy/AuditSetSystemPolicy`: no `auditpol.exe`.
 
 **Examples:**
 
@@ -638,7 +718,7 @@ The `key` uses dotted notation, e.g., `net.ipv4.ip_forward`.
 | `Value` | `string` | `""` | Desired kernel parameter value. Required. |
 | `Persist` | `bool` | `true` | If `true`, writes to `/etc/sysctl.d/99-converge.conf` so the setting survives reboots. |
 
-**API:** Direct file I/O to `/proc/sys/` -- no `sysctl` command.
+**API:** Direct file I/O to `/proc/sys/`: no `sysctl` command.
 
 **Idempotency:** Reads the live kernel value from `/proc/sys/<key>` and compares. Writes only on mismatch.
 
@@ -681,7 +761,7 @@ The `domain` is the preference domain, e.g., `com.apple.screensaver`.
 | `Type` | `string` | `""` | Explicit type hint: `"bool"`, `"int"`, `"float"`, `"string"`. |
 | `Host` | `bool` | `false` | If `true`, targets `/Library/Preferences` (system-wide). If `false`, targets `~/Library/Preferences`. |
 
-**API:** `howett.net/plist` for binary plist encode/decode -- no `defaults` command.
+**API:** `howett.net/plist` for binary plist encode/decode: no `defaults` command.
 
 **Idempotency:** Reads the plist file, decodes, and compares the key's current value. Writes only on mismatch using read-modify-write to preserve other keys.
 

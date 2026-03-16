@@ -1,12 +1,32 @@
 # Design
 
-Converge is a Go-based configuration management tool that compiles to a single static binary per platform. This document covers the motivation, design philosophy, and internal architecture.
+Converge is a Go-based configuration management daemon that compiles to a single static binary per platform. It uses a DAG engine with event-driven drift detection to maintain desired state on endpoints. This document covers the motivation, design philosophy, and internal architecture.
 
 ---
 
-## Problem Statement
+## Why Converge
 
-We manage 500K+ endpoints across macOS, Windows, and Linux. Every mainstream configuration management tool drags an interpreted language runtime onto every endpoint, then asks you to write configuration logic in that runtime's DSL.
+### The DAG + Event-Driven Difference
+
+Every mainstream configuration management tool runs on a timer: Chef every 30 minutes, Puppet every 30 minutes, Ansible only when you push. Between runs, drift is invisible. When a run does happen, the tool re-checks everything, whether it changed or not.
+
+Converge inverts this model:
+
+| Capability | Converge | Chef/Puppet | Ansible | Terraform |
+|---|---|---|---|---|
+| Drift detection latency | <1s (OS events) | ~30 min (cron) | None (push-only) | N/A (infra) |
+| What gets re-checked on drift | Drifted resource + DAG dependents | Everything | Everything | N/A |
+| Dependency-aware re-convergence | Yes (DAG propagation) | No (run-list order) | No (playbook order) | Yes (infra only) |
+| Runtime deps | None | Ruby | Python | None |
+| Scope | Endpoint config | Endpoint config | Endpoint config | Cloud infra |
+
+When someone manually edits `/etc/nginx/nginx.conf`, converge detects the change via inotify within milliseconds, re-checks the file, restores it, and then walks the DAG to re-check `service:nginx` (because it depends on that file). Chef and Puppet would not notice until the next cron run, and even then they would re-check every resource in the catalog, not just the affected subgraph.
+
+This is not an incremental improvement. It is a fundamentally different architecture.
+
+### The Runtime Dependency Problem
+
+We manage 500K+ endpoints across macOS, Windows, and Linux. Every mainstream tool drags an interpreted language runtime onto every endpoint:
 
 | Tool | Runtime Required | Language | State Model |
 |-----------|-----------------|----------|-------------|
@@ -19,10 +39,11 @@ We manage 500K+ endpoints across macOS, Windows, and Linux. Every mainstream con
 The problems compound at scale:
 
 - **Runtime dependencies are a liability.** Chef needs Ruby. Ansible needs Python. Puppet needs a JVM. At 500K endpoints, every runtime is an attack surface, a version-skew headache, and a bootstrap chicken-and-egg problem.
-- **Interpreted languages lack compile-time safety.** A typo in a Chef recipe, a wrong Jinja2 variable type in Ansible -- none fail until runtime, on a production endpoint, possibly at 2 AM.
+- **Interpreted languages lack compile-time safety.** A typo in a Chef recipe, a wrong Jinja2 variable type in Ansible: none fail until runtime, on a production endpoint, possibly at 2 AM.
 - **YAML-based tools are stringly-typed.** Ansible playbooks and Salt states are YAML with string interpolation. No IDE autocompletion, no refactoring support, no type checking.
 - **Terraform solves the wrong problem.** Excellent for provisioning infrastructure but wrong for endpoint configuration management. It requires state files and has no concept of converging local system state.
 - **Cross-tool drift.** When Chef manages the same file in two cookbooks, the last recipe to run wins. No conflict detection.
+- **Cron-based convergence is blind between runs.** A 30-minute cron interval means up to 30 minutes of undetected drift. Converge's event-driven daemon detects drift in milliseconds via OS-native events.
 
 ---
 
@@ -34,6 +55,7 @@ One `converge` binary per OS/arch. No Ruby, no Python, no JVM, no gem install, n
 
 | Property | Detail |
 |----------|--------|
+| Event-driven DAG daemon | OS-level watchers (inotify, dbus, registry notifications) detect drift in <1s. DAG propagation re-checks dependents automatically. |
 | Single binary, zero deps | Static binary per platform. Drop on a fresh image and run. |
 | Blueprints are Go packages | Static types, compile-time errors, `go test`, IDE autocompletion. |
 | Convergent, no state file | Every resource checks live system state on every run. No state file to corrupt. |
@@ -42,6 +64,14 @@ One `converge` binary per OS/arch. No Ruby, no Python, no JVM, no gem install, n
 ---
 
 ## Design Philosophy
+
+### DAG-Native > Run-List
+
+Chef executes a flat run-list. Puppet compiles a catalog with ordering hints. Both re-process everything on every run. Converge builds a true DAG where dependencies are first-class: when one resource drifts, only its subgraph is re-evaluated.
+
+### Event-Driven > Cron
+
+Cron-based tools poll the entire catalog every N minutes. Between runs, drift is invisible. Converge uses OS-native event mechanisms (inotify for files on Linux, dbus for services, registry change notifications on Windows) to detect drift the instant it happens. The daemon idles at near-zero CPU until an event fires.
 
 ### Compiled > Interpreted
 
@@ -96,7 +126,7 @@ type Resource interface {
 | `Missing` | Resource doesn't exist yet. |
 | `Error` | Can't determine state (permissions, etc.). |
 
-`Check()` is read-only. `Apply()` mutates the system and is only called when `Check()` returns `Drifted` or `Missing`. A follow-up `Check()` must return `OK` -- otherwise Converge reports a convergence failure.
+`Check()` is read-only. `Apply()` mutates the system and is only called when `Check()` returns `Drifted` or `Missing`. A follow-up `Check()` must return `OK`, otherwise Converge reports a convergence failure.
 
 **Idempotency by construction:** Run it once, drift is fixed. Run it again, nothing changes. The engine enforces this via the Check/Apply split.
 
@@ -136,10 +166,10 @@ type Extension interface {
 }
 ```
 
-- **ID()** -- unique identifier (e.g. `file:/etc/motd`, `package:git`). Used for duplicate detection.
-- **Check()** -- reads current state, returns whether in sync. No root required.
-- **Apply()** -- mutates the system. Requires root. Only called when Check() reports out-of-sync.
-- **String()** -- human-readable label for output (e.g. `File /etc/motd`).
+- **ID()**: unique identifier (e.g. `file:/etc/motd`, `package:git`). Used for duplicate detection.
+- **Check()**: reads current state, returns whether in sync. No root required.
+- **Apply()**: mutates the system. Requires root. Only called when Check() reports out-of-sync.
+- **String()**: human-readable label for output (e.g. `File /etc/motd`).
 
 Extensions may optionally implement:
 
@@ -153,12 +183,12 @@ type Poller interface {
 }
 ```
 
-- **Watcher** -- blocks on OS-level events (inotify, dbus, etc.) and sends events when the resource may have drifted. Used by daemon mode for instant drift detection.
-- **Poller** -- overrides the default poll interval for resources without native OS event support.
+- **Watcher**: blocks on OS-level events (inotify, dbus, etc.) and sends events when the resource may have drifted. Used by daemon mode for instant drift detection.
+- **Poller**: overrides the default poll interval for resources without native OS event support.
 
 ### Platform-Specific Code
 
-Platform-specific code uses Go build tags. There are no stubs or no-op shims -- if a platform doesn't need an extension, the DSL simply doesn't expose it.
+Platform-specific code uses Go build tags. There are no stubs or no-op shims: if a platform doesn't need an extension, the DSL simply doesn't expose it.
 
 **Extension pattern:** shared struct in a plain `.go` file (no build tag), `Check()`/`Apply()` in build-tagged files (one per platform). Example: `extensions/service/service.go` + `service_linux.go` + `service_windows.go`.
 
@@ -188,6 +218,8 @@ flowchart LR
     L1 --> L2["Layer 2<br/>service:nginx"]
 ```
 
+**DAG-aware re-convergence:** When a resource drifts in daemon mode, the engine does not re-check the entire catalog. It re-checks the drifted resource, and if that resource changed, it walks the DAG forward to re-check all dependents. In the example above, if `file:/etc/nginx/nginx.conf` is modified externally, converge detects it via inotify, restores the file, then automatically re-checks `service:nginx` (because the service depends on the config file). Chef and Puppet have no equivalent: they re-run the entire catalog on the next cron tick.
+
 ### Auto-Edges
 
 Implicit dependencies are detected automatically:
@@ -200,7 +232,21 @@ Implicit dependencies are detected automatically:
 
 Auto-edges that would create cycles are silently skipped.
 
-### Daemon Mode (`converge serve`)
+### Event-Driven Daemon (`converge serve`)
+
+The daemon architecture is fundamentally different from cron-based tools. Instead of re-processing the entire catalog on a timer, converge uses OS-native event mechanisms to detect drift the instant it happens:
+
+| Resource Type | Event Mechanism | Platform |
+|---|---|---|
+| File | inotify | Linux |
+| File | kqueue | macOS |
+| File | ReadDirectoryChangesW | Windows |
+| Service | dbus signals | Linux |
+| Service | SCM notifications | Windows |
+| Registry | RegNotifyChangeKeyValue | Windows |
+| Package, Exec | Polling fallback | All |
+
+When no events are firing, the daemon idles at near-zero CPU. There is no 30-minute polling loop burning cycles to discover nothing changed.
 
 ```mermaid
 flowchart TD
@@ -212,18 +258,20 @@ flowchart TD
     F --> G[Event loop]
     G --> H{Event received}
     H --> I[Check + Apply resource]
-    I --> J{Success?}
-    J -->|yes| G
-    J -->|no| K[Exponential backoff retry]
-    K --> L{Max retries?}
-    L -->|no| G
-    L -->|yes| M[Mark noncompliant<br/>log warning<br/>keep watching]
-    M --> G
+    I --> J[Walk DAG: re-check dependents]
+    J --> K{Success?}
+    K -->|yes| G
+    K -->|no| L[Exponential backoff retry]
+    L --> M{Max retries?}
+    M -->|no| G
+    M -->|yes| N[Mark noncompliant<br/>log warning<br/>keep watching]
+    N --> G
 ```
 
 **Key behaviors:**
 
 - **Event-driven, not polling.** Resources implementing `Watcher` (File via inotify, Service via dbus) block on OS-level events. Near-zero CPU at idle.
+- **DAG propagation.** When a resource changes, its downstream dependents in the DAG are automatically re-checked. This is what Chef, Puppet, and Ansible lack entirely.
 - **Polling fallback.** Resources without native OS events (Package, Exec) are polled at configurable intervals.
 - **Event coalescing.** Multiple rapid events for the same resource collapse into one CheckApply (500ms window).
 - **Rate limiting.** Per-resource rate limiter prevents flapping resources from consuming CPU.
@@ -333,6 +381,8 @@ These are real bugs, outages, and hours lost managing endpoints with Chef at sca
 
 | Problem | Chef | Converge |
 |---------|------|----------|
+| 30-minute blind spots | Cron runs every 30 min, drift invisible between runs | Event-driven daemon detects drift in <1s |
+| No dependency propagation | Re-runs entire catalog, unaware which resources are affected | DAG walks forward from drifted resource, re-checks only dependents |
 | Cross-cookbook file conflicts | Last recipe wins, no warning | Duplicate resource declarations are build errors |
 | Type coercion | `"0"` is truthy in Ruby | `bool` is `bool`, compiler enforces types |
 | Regex file mutations | `Chef::Util::FileEdit` with fragile regexes | Declarative file content, atomic writes |
@@ -344,7 +394,7 @@ These are real bugs, outages, and hours lost managing endpoints with Chef at sca
 
 ## Scope
 
-Converge manages everything on the endpoint: packages, services, files, users, firewall rules, registry keys, kernel parameters, audit policies. With `converge serve`, it continuously enforces desired state via event-driven drift detection.
+Converge manages everything on the endpoint: packages, services, files, users, firewall rules, registry keys, kernel parameters, audit policies. With `converge serve`, it continuously enforces desired state via event-driven drift detection and DAG-aware re-convergence.
 
 What converge does **not** do:
 
