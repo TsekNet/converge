@@ -4,7 +4,7 @@ package blueprints
 
 import "github.com/TsekNet/converge/dsl"
 
-// Windows declares desired state for a Windows workstation.
+// Windows declares desired state for Windows.
 func Windows(r *dsl.Run) {
 	for _, pkg := range []string{"git", "7zip", "vscode", "curl"} {
 		r.Package(pkg, dsl.PackageOpts{State: dsl.Present})

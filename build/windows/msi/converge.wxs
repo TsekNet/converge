@@ -30,7 +30,7 @@
             Start="auto"
             Type="ownProcess"
             ErrorControl="normal"
-            Arguments="serve workstation" />
+            Arguments="serve baseline" />
 
           <ServiceControl
             Id="ConvergeServiceControl"

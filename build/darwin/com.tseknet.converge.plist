@@ -9,7 +9,7 @@
     <array>
         <string>/usr/local/bin/converge</string>
         <string>serve</string>
-        <string>workstation</string>
+        <string>baseline</string>
     </array>
 
     <key>RunAtLoad</key>

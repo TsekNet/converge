@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/converge serve workstation
+ExecStart=/usr/local/bin/converge serve baseline
 Restart=on-failure
 RestartSec=5
 KillMode=mixed

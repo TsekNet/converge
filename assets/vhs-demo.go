@@ -1,7 +1,7 @@
 //go:build ignore
 
 // vhs-demo produces representative converge plan output for the VHS demo recording.
-// Uses the output package with mock extensions. Run via: go run ./assets/vhs-demo.go workstation
+// Uses the output package with mock extensions. Run via: go run ./assets/vhs-demo.go baseline
 package main
 
 import (
@@ -27,7 +27,7 @@ var _ extensions.Extension = (*stubExt)(nil)
 
 func main() {
 	flag.Parse()
-	blueprint := "workstation"
+	blueprint := "baseline"
 	// Accept "converge plan <blueprint>" style args
 	args := flag.Args()
 	if len(args) >= 2 && args[0] == "plan" {

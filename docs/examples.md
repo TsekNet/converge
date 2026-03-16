@@ -47,7 +47,7 @@ package blueprints
 
 import "github.com/TsekNet/converge/dsl"
 
-func Workstation(r *dsl.Run) {
+func Baseline(r *dsl.Run) {
     p := r.Platform()
 
     // Cross-platform: install git everywhere

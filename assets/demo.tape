@@ -30,7 +30,7 @@ Enter
 Sleep 300ms
 Show
 
-Type "converge plan workstation"
+Type "converge plan baseline"
 Sleep 500ms
 Enter
 Sleep 8s

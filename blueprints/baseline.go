@@ -2,9 +2,9 @@ package blueprints
 
 import "github.com/TsekNet/converge/dsl"
 
-// Workstation declares desired state for a developer workstation.
-// Cross-platform: uses runtime detection for platform-specific paths.
-func Workstation(r *dsl.Run) {
+// Baseline declares the cross-platform baseline every managed host gets.
+// Platform-specific resources use runtime detection.
+func Baseline(r *dsl.Run) {
 	p := r.Platform()
 
 	// Common packages across all platforms.

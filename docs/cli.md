@@ -52,7 +52,7 @@ Built-in blueprints vary by platform:
 
 | Blueprint | Platform | Description |
 |-----------|----------|-------------|
-| `workstation` | All | Base workstation setup |
+| `baseline` | All | Cross-platform baseline for all managed hosts |
 | `linux` | Linux | Linux-specific defaults |
 | `linux_server` | Linux | Hardened Linux server |
 | `darwin` | macOS | macOS-specific defaults |
@@ -166,22 +166,22 @@ Replace the binary via your package manager. The service manager restarts conver
 
 ```bash
 # Plan (dry-run, no root)
-converge plan workstation
+converge plan baseline
 
 # Serve as persistent daemon (requires root)
-sudo converge serve workstation
+sudo converge serve baseline
 
 # Converge once and exit (CI/Packer)
-sudo converge serve workstation --once
+sudo converge serve baseline --once
 
 # JSON output for CI scripting
-converge plan workstation --out=json | jq '.resources[] | select(.status == "pending")'
+converge plan baseline --out=json | jq '.resources[] | select(.status == "pending")'
 
 # Parallel with timeout
-sudo converge serve workstation --parallel=4 --timeout=2m
+sudo converge serve baseline --parallel=4 --timeout=2m
 
 # Custom retry limit
-sudo converge serve workstation --max-retries=5
+sudo converge serve baseline --max-retries=5
 
 # List blueprints
 converge list -b

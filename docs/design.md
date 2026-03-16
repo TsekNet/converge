@@ -112,7 +112,7 @@ type Resource interface {
 | `extensions/` | Resource implementations: file, exec, firewall, pkg, service, user, registry, secpol, auditpol, sysctl, plist |
 | `internal/` | Engine, DAG graph, daemon, auto-edges, exit codes, platform detection, output, logging |
 | `cmd/converge/` | Cobra CLI entry point, blueprint registration |
-| `blueprints/` | Built-in blueprints: workstation, linux, darwin, windows, CIS L1 |
+| `blueprints/` | Built-in blueprints: baseline, linux, darwin, windows, CIS L1 |
 
 **Boundary rules:**
 

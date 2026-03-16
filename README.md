@@ -26,14 +26,14 @@ Download latest installer for your platform from the [Releases](https://github.c
 
 ## Quick start
 
-**1. Edit a blueprint** (`blueprints/workstation.go`):
+**1. Edit a blueprint** (`blueprints/baseline.go`):
 
 ```go
 package blueprints
 
 import "github.com/TsekNet/converge/dsl"
 
-func Workstation(r *dsl.Run) {
+func Baseline(r *dsl.Run) {
     r.Package("nginx", dsl.PackageOpts{State: dsl.Present})
     r.Service("nginx", dsl.ServiceOpts{State: dsl.Running, Enable: true})
     r.File("/etc/nginx/conf.d/app.conf", dsl.FileOpts{Content: "...", Mode: 0644})
@@ -43,19 +43,19 @@ func Workstation(r *dsl.Run) {
 **2. Plan and serve:**
 
 ```bash
-converge plan workstation               # dry-run, no root needed
-sudo converge serve workstation         # run as persistent daemon, re-converge on drift
-sudo converge serve workstation --once  # converge once and exit (CI/Packer)
+converge plan baseline               # dry-run, no root needed
+sudo converge serve baseline         # run as persistent daemon, re-converge on drift
+sudo converge serve baseline --once  # converge once and exit (CI/Packer)
 ```
 
 **3. Flags:**
 
 ```bash
-converge plan workstation --out=json             # machine-readable output (also: serial)
-converge serve workstation --parallel 4          # concurrent initial convergence
-converge serve workstation --timeout 2m          # per-resource timeout
-converge serve workstation --max-retries 5       # retries before marking noncompliant
-converge plan workstation --detailed-exit-codes  # granular exit codes for CI
+converge plan baseline --out=json             # machine-readable output (also: serial)
+converge serve baseline --parallel 4          # concurrent initial convergence
+converge serve baseline --timeout 2m          # per-resource timeout
+converge serve baseline --max-retries 5       # retries before marking noncompliant
+converge plan baseline --detailed-exit-codes  # granular exit codes for CI
 ```
 
 ## Features

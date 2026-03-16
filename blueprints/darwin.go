@@ -2,7 +2,7 @@ package blueprints
 
 import "github.com/TsekNet/converge/dsl"
 
-// Darwin declares desired state for a macOS workstation.
+// Darwin declares desired state for macOS.
 func Darwin(r *dsl.Run) {
 	for _, pkg := range []string{"git", "jq", "htop", "wget", "tree"} {
 		r.Package(pkg, dsl.PackageOpts{State: dsl.Present})
