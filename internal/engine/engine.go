@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/TsekNet/converge/extensions"
+	"github.com/TsekNet/converge/internal/graph"
 	"github.com/TsekNet/converge/internal/output"
 	"github.com/google/deck"
 )
@@ -204,5 +205,103 @@ func setMaxNameLen(resources []extensions.Extension, printer output.Printer) {
 			}
 		}
 		p.SetMaxNameLen(maxLen)
+	}
+}
+
+// RunPlanDAG checks all resources in topological order without applying changes.
+func RunPlanDAG(g *graph.Graph, printer output.Printer, opts Options) (int, error) {
+	layers, err := g.TopologicalLayers()
+	if err != nil {
+		return 1, fmt.Errorf("building execution order: %w", err)
+	}
+
+	// Flatten for total count and name alignment.
+	var all []extensions.Extension
+	for _, layer := range layers {
+		all = append(all, layer...)
+	}
+
+	return RunPlan(all, printer, opts)
+}
+
+// RunApplyDAG checks and applies changes in topological layer order.
+// Resources within the same layer run concurrently up to opts.Parallel.
+// Dependencies in earlier layers complete before later layers start.
+func RunApplyDAG(g *graph.Graph, printer output.Printer, opts Options) (int, error) {
+	layers, err := g.TopologicalLayers()
+	if err != nil {
+		return 1, fmt.Errorf("building execution order: %w", err)
+	}
+
+	// Flatten for total count and name alignment.
+	var all []extensions.Extension
+	for _, layer := range layers {
+		all = append(all, layer...)
+	}
+
+	ctx := context.Background()
+	start := time.Now()
+	changed, ok, failed := 0, 0, 0
+	idx := 0
+
+	setMaxNameLen(all, printer)
+
+	for _, layer := range layers {
+		results := make([]applyResult, len(layer))
+
+		if opts.Parallel > 1 && len(layer) > 1 {
+			sem := make(chan struct{}, opts.Parallel)
+			var wg sync.WaitGroup
+			for i, r := range layer {
+				wg.Add(1)
+				sem <- struct{}{}
+				go func(j int, res extensions.Extension) {
+					defer wg.Done()
+					defer func() { <-sem }()
+					results[j] = applyOne(ctx, res, opts.Timeout)
+				}(i, r)
+			}
+			wg.Wait()
+		} else {
+			for i, r := range layer {
+				results[i] = applyOne(ctx, r, opts.Timeout)
+			}
+		}
+
+		for _, ar := range results {
+			idx++
+			printer.ApplyStart(ar.ext, idx, len(all))
+			printer.ApplyResult(ar.ext, ar.result)
+
+			switch ar.result.Status {
+			case extensions.StatusOK:
+				ok++
+			case extensions.StatusChanged:
+				changed++
+			default:
+				failed++
+				if isCritical(ar.ext) {
+					deck.Errorf("critical resource failed: %s", ar.ext.ID())
+					printer.Summary(changed, ok, failed, changed+ok+failed, time.Since(start).Milliseconds())
+					return 3, fmt.Errorf("critical resource %s failed", ar.ext.ID())
+				}
+			}
+		}
+	}
+
+	total := changed + ok + failed
+	printer.Summary(changed, ok, failed, total, time.Since(start).Milliseconds())
+
+	switch {
+	case total == 0:
+		return 0, nil
+	case failed == total:
+		return 4, nil
+	case failed > 0:
+		return 3, nil
+	case changed > 0:
+		return 2, nil
+	default:
+		return 0, nil
 	}
 }

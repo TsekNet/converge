@@ -25,17 +25,19 @@ const (
 )
 
 type FileOpts struct {
-	Content  string
-	Mode     os.FileMode
-	Owner    string
-	Group    string
-	Append   bool
-	Critical bool
+	Content   string
+	Mode      os.FileMode
+	Owner     string
+	Group     string
+	Append    bool
+	Critical  bool
+	DependsOn []string
 }
 
 type PackageOpts struct {
-	State    ResourceState
-	Critical bool
+	State     ResourceState
+	Critical  bool
+	DependsOn []string
 }
 
 type ServiceOpts struct {
@@ -43,6 +45,7 @@ type ServiceOpts struct {
 	Enable      bool
 	StartupType string // "auto", "delayed-auto", "manual", "disabled" (Windows SCM)
 	Critical    bool
+	DependsOn   []string
 }
 
 type ExecOpts struct {
@@ -54,29 +57,33 @@ type ExecOpts struct {
 	Retries    int
 	RetryDelay time.Duration
 	Critical   bool
+	DependsOn  []string
 }
 
 type UserOpts struct {
-	Groups   []string
-	Shell    string
-	Home     string
-	System   bool
-	Critical bool
+	Groups    []string
+	Shell     string
+	Home      string
+	System    bool
+	Critical  bool
+	DependsOn []string
 }
 
 type RegistryOpts struct {
-	Value    string
-	Type     string
-	Data     any
-	State    ResourceState // Present (default) or Absent
-	Critical bool
+	Value     string
+	Type      string
+	Data      any
+	State     ResourceState // Present (default) or Absent
+	Critical  bool
+	DependsOn []string
 }
 
 type SecurityPolicyOpts struct {
-	Category string // "password" or "lockout"
-	Key      string
-	Value    string
-	Critical bool
+	Category  string // "password" or "lockout"
+	Key       string
+	Value     string
+	Critical  bool
+	DependsOn []string
 }
 
 type AuditPolicyOpts struct {
@@ -84,20 +91,23 @@ type AuditPolicyOpts struct {
 	Success     bool
 	Failure     bool
 	Critical    bool
+	DependsOn   []string
 }
 
 type SysctlOpts struct {
-	Value    string
-	Persist  bool
-	Critical bool
+	Value     string
+	Persist   bool
+	Critical  bool
+	DependsOn []string
 }
 
 type PlistOpts struct {
-	Key      string
-	Value    any
-	Type     string // "bool", "int", "float", "string"
-	Host     bool   // true = /Library/Preferences (system-wide), false = ~/Library/Preferences
-	Critical bool
+	Key       string
+	Value     any
+	Type      string // "bool", "int", "float", "string"
+	Host      bool   // true = /Library/Preferences (system-wide), false = ~/Library/Preferences
+	Critical  bool
+	DependsOn []string
 }
 
 type FirewallOpts struct {
@@ -109,4 +119,5 @@ type FirewallOpts struct {
 	Dest      string // Optional destination address/CIDR
 	State     ResourceState
 	Critical  bool
+	DependsOn []string
 }

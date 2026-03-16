@@ -80,14 +80,11 @@ func (a *App) RunPlan(name string, printer output.Printer) (int, error) {
 	}
 
 	run := newRun(a)
-	entry.fn(run)
-
-	resources := run.Resources()
-	if err := engine.CheckDuplicates(resources); err != nil {
+	if err := runBlueprint(entry.fn, run); err != nil {
 		return 1, err
 	}
 
-	return engine.RunPlan(resources, printer, a.EngineOpts)
+	return engine.RunPlanDAG(run.Graph(), printer, a.EngineOpts)
 }
 
 func (a *App) RunApply(name string, printer output.Printer) (int, error) {
@@ -101,14 +98,23 @@ func (a *App) RunApply(name string, printer output.Printer) (int, error) {
 	}
 
 	run := newRun(a)
-	entry.fn(run)
-
-	resources := run.Resources()
-	if err := engine.CheckDuplicates(resources); err != nil {
+	if err := runBlueprint(entry.fn, run); err != nil {
 		return 1, err
 	}
 
-	return engine.RunApply(resources, printer, a.EngineOpts)
+	return engine.RunApplyDAG(run.Graph(), printer, a.EngineOpts)
+}
+
+// runBlueprint executes a blueprint function and recovers panics (e.g.
+// duplicate resources, missing dependencies) as errors.
+func runBlueprint(fn Blueprint, run *Run) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+	fn(run)
+	return nil
 }
 
 func isRoot() bool {
