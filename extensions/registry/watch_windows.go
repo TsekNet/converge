@@ -63,7 +63,7 @@ func (r *Registry) Watch(ctx context.Context, events chan<- extensions.Event) er
 		select {
 		case events <- extensions.Event{
 			ResourceID: r.ID(),
-			Reason:     "RegNotifyChangeKeyValue",
+			Kind: extensions.EventWatch, Detail: "RegNotifyChangeKeyValue",
 			Time:       time.Now(),
 		}:
 		case <-ctx.Done():

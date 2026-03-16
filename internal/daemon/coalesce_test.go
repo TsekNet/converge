@@ -18,7 +18,7 @@ func TestCoalescer_CollapsesBurstEvents(t *testing.T) {
 
 	// Send 50 events for the same resource in rapid succession.
 	for i := 0; i < 50; i++ {
-		c.submit(extensions.Event{ResourceID: "file:/etc/test", Reason: "modified"})
+		c.submit(extensions.Event{ResourceID: "file:/etc/test", Kind: extensions.EventWatch, Detail: "modified"})
 	}
 
 	// Wait for the coalesce window to fire.
@@ -46,8 +46,8 @@ func TestCoalescer_DifferentResourcesNotCoalesced(t *testing.T) {
 	defer cancel()
 	go c.run(ctx)
 
-	c.submit(extensions.Event{ResourceID: "file:/etc/a", Reason: "modified"})
-	c.submit(extensions.Event{ResourceID: "file:/etc/b", Reason: "modified"})
+	c.submit(extensions.Event{ResourceID: "file:/etc/a", Kind: extensions.EventWatch, Detail: "modified"})
+	c.submit(extensions.Event{ResourceID: "file:/etc/b", Kind: extensions.EventWatch, Detail: "modified"})
 
 	time.Sleep(150 * time.Millisecond)
 	cancel()

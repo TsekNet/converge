@@ -9,10 +9,12 @@ import (
 )
 
 // Run is the context passed to blueprints for declaring resources.
+// Errors during resource declaration are accumulated, not panicked.
 type Run struct {
 	graph    *graph.Graph
 	platform platform.Info
 	app      *App
+	err      error // first error encountered during blueprint execution
 }
 
 func newRun(app *App) *Run {
@@ -24,14 +26,24 @@ func newRun(app *App) *Run {
 }
 
 func (r *Run) addResource(ext extensions.Extension, deps []string) {
+	if r.err != nil {
+		return // stop processing after first error
+	}
 	if err := r.graph.AddNode(ext); err != nil {
-		panic(fmt.Sprintf("converge: %v", err))
+		r.err = fmt.Errorf("%s: %v", ext.ID(), err)
+		return
 	}
 	for _, dep := range deps {
 		if err := r.graph.AddEdge(ext.ID(), dep); err != nil {
-			panic(fmt.Sprintf("converge: dependency %s -> %s: %v", ext.ID(), dep, err))
+			r.err = fmt.Errorf("dependency %s -> %s: %v", ext.ID(), dep, err)
+			return
 		}
 	}
+}
+
+// Err returns the first error encountered during blueprint execution.
+func (r *Run) Err() error {
+	return r.err
 }
 
 // Graph returns the resource dependency graph for engine processing.
@@ -51,23 +63,34 @@ func (r *Run) Platform() platform.Info {
 
 // Include runs another registered blueprint within this Run context.
 func (r *Run) Include(name string) {
+	if r.err != nil {
+		return
+	}
 	if r.app == nil {
-		panic(fmt.Sprintf("converge: Include(%q): no app context", name))
+		r.err = fmt.Errorf("Include(%q): no app context", name)
+		return
 	}
 	entry, ok := r.app.blueprints[name]
 	if !ok {
-		panic(fmt.Sprintf("converge: Include(%q): blueprint not registered", name))
+		r.err = fmt.Errorf("Include(%q): blueprint not registered", name)
+		return
 	}
 	entry.fn(r)
 }
 
 func (r *Run) File(path string, opts FileOpts) {
-	mustNotBeEmpty("File", "path", path)
+	if err := requireNotEmpty("File", "path", path); err != nil {
+		r.err = err
+		return
+	}
 	r.addResource(newFileExtension(path, opts), opts.DependsOn)
 }
 
 func (r *Run) Package(name string, opts PackageOpts) {
-	mustNotBeEmpty("Package", "name", name)
+	if err := requireNotEmpty("Package", "name", name); err != nil {
+		r.err = err
+		return
+	}
 	if opts.State == "" {
 		opts.State = Present
 	}
@@ -75,7 +98,10 @@ func (r *Run) Package(name string, opts PackageOpts) {
 }
 
 func (r *Run) Service(name string, opts ServiceOpts) {
-	mustNotBeEmpty("Service", "name", name)
+	if err := requireNotEmpty("Service", "name", name); err != nil {
+		r.err = err
+		return
+	}
 	if opts.State == "" {
 		opts.State = Running
 	}
@@ -83,18 +109,30 @@ func (r *Run) Service(name string, opts ServiceOpts) {
 }
 
 func (r *Run) Exec(name string, opts ExecOpts) {
-	mustNotBeEmpty("Exec", "name", name)
-	mustNotBeEmpty("Exec", "command", opts.Command)
+	if err := requireNotEmpty("Exec", "name", name); err != nil {
+		r.err = err
+		return
+	}
+	if err := requireNotEmpty("Exec", "command", opts.Command); err != nil {
+		r.err = err
+		return
+	}
 	r.addResource(newExecExtension(name, opts), opts.DependsOn)
 }
 
 func (r *Run) User(name string, opts UserOpts) {
-	mustNotBeEmpty("User", "name", name)
+	if err := requireNotEmpty("User", "name", name); err != nil {
+		r.err = err
+		return
+	}
 	r.addResource(newUserExtension(name, opts), opts.DependsOn)
 }
 
 func (r *Run) Firewall(name string, opts FirewallOpts) {
-	mustNotBeEmpty("Firewall", "name", name)
+	if err := requireNotEmpty("Firewall", "name", name); err != nil {
+		r.err = err
+		return
+	}
 	if opts.Protocol == "" {
 		opts.Protocol = "tcp"
 	}
@@ -107,8 +145,9 @@ func (r *Run) Firewall(name string, opts FirewallOpts) {
 	r.addResource(newFirewallExtension(name, opts), opts.DependsOn)
 }
 
-func mustNotBeEmpty(resource, field, value string) {
+func requireNotEmpty(resource, field, value string) error {
 	if value == "" {
-		panic(fmt.Sprintf("converge: %s requires %s (got empty string)", resource, field))
+		return fmt.Errorf("%s requires %s (got empty string)", resource, field)
 	}
+	return nil
 }

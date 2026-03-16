@@ -90,12 +90,12 @@ func TestDaemon_WatcherTriggersApply(t *testing.T) {
 	ext := &mockWatcherExt{
 		mockExt: mockExt{id: "file:/etc/test", inSync: true},
 		watchFn: func(ctx context.Context, events chan<- extensions.Event) error {
-			// Send one event after a short delay, then wait for cancellation.
 			select {
 			case <-time.After(50 * time.Millisecond):
 				events <- extensions.Event{
 					ResourceID: "file:/etc/test",
-					Reason:     "file modified",
+					Kind:       extensions.EventWatch,
+					Detail:     "mock watcher",
 					Time:       time.Now(),
 				}
 			case <-ctx.Done():
@@ -114,10 +114,9 @@ func TestDaemon_WatcherTriggersApply(t *testing.T) {
 		Parallel: 1,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// Before the event, set inSync=false so Apply runs when event fires.
 	go func() {
 		time.Sleep(40 * time.Millisecond)
 		ext.inSync = false
@@ -144,10 +143,9 @@ func TestDaemon_PollerFallback(t *testing.T) {
 		Parallel: 1,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// After 75ms, mark out of sync so next poll triggers Apply.
 	go func() {
 		time.Sleep(75 * time.Millisecond)
 		ext.inSync = false
@@ -161,7 +159,6 @@ func TestDaemon_PollerFallback(t *testing.T) {
 }
 
 func TestDaemon_DefaultPollInterval(t *testing.T) {
-	// Extension that implements neither Watcher nor Poller uses default poll.
 	ext := &mockExt{id: "exec:check", inSync: true}
 
 	g := graph.New()
@@ -173,7 +170,7 @@ func TestDaemon_DefaultPollInterval(t *testing.T) {
 		DefaultPollFreq: 50 * time.Millisecond,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	go func() {
@@ -188,7 +185,7 @@ func TestDaemon_DefaultPollInterval(t *testing.T) {
 	}
 }
 
-// mockFailExt always fails Apply, used for retry/noncompliance testing.
+// mockFailExt always fails Apply.
 type mockFailExt struct {
 	id         string
 	applyCount atomic.Int32
@@ -216,10 +213,10 @@ func TestDaemon_RetryBackoff(t *testing.T) {
 		MaxRetries:      3,
 		RetryBaseDelay:  5 * time.Millisecond,
 		DefaultPollFreq: 10 * time.Millisecond,
+		CoalesceWindow:  5 * time.Millisecond,
 	})
 
-	// Run long enough for retries to exhaust (base 5ms, then 10ms, then noncompliant).
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	d.Run(ctx)
 
@@ -232,7 +229,7 @@ func TestDaemon_RetryBackoff(t *testing.T) {
 	}
 }
 
-// mockTransientFailExt fails N times then succeeds, and implements Watcher.
+// mockTransientFailExt fails N times then succeeds, implements Watcher.
 type mockTransientFailExt struct {
 	id        string
 	failUntil int32
@@ -254,7 +251,6 @@ func (m *mockTransientFailExt) Apply(_ context.Context) (*extensions.Result, err
 }
 func (m *mockTransientFailExt) String() string { return m.id }
 func (m *mockTransientFailExt) Watch(ctx context.Context, events chan<- extensions.Event) error {
-	// Send periodic events to trigger retries.
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -264,7 +260,8 @@ func (m *mockTransientFailExt) Watch(ctx context.Context, events chan<- extensio
 		case <-ticker.C:
 			events <- extensions.Event{
 				ResourceID: m.id,
-				Reason:     "external change",
+				Kind:       extensions.EventWatch,
+				Detail:     "external change",
 				Time:       time.Now(),
 			}
 		}
@@ -274,7 +271,7 @@ func (m *mockTransientFailExt) Watch(ctx context.Context, events chan<- extensio
 func TestDaemon_RetryResetsOnSuccess(t *testing.T) {
 	ext := &mockTransientFailExt{
 		id:        "file:/etc/test",
-		failUntil: 2, // fail first 2 times, succeed on 3rd
+		failUntil: 2,
 		inSync:    false,
 	}
 
@@ -288,7 +285,7 @@ func TestDaemon_RetryResetsOnSuccess(t *testing.T) {
 		RetryBaseDelay: 5 * time.Millisecond,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	d.Run(ctx)
 
@@ -317,11 +314,9 @@ func TestDaemon_OnceExitsAfterConvergence(t *testing.T) {
 	})
 
 	start := time.Now()
-	ctx := context.Background()
-	d.Run(ctx)
+	d.Run(context.Background())
 	elapsed := time.Since(start)
 
-	// Once mode should return quickly, not block forever.
 	if elapsed > 2*time.Second {
 		t.Errorf("Once mode took %v, expected quick return", elapsed)
 	}

@@ -3,7 +3,13 @@
 package dsl
 
 func (r *Run) Plist(domain string, opts PlistOpts) {
-	mustNotBeEmpty("Plist", "domain", domain)
-	mustNotBeEmpty("Plist", "key", opts.Key)
+	if err := requireNotEmpty("Plist", "domain", domain); err != nil {
+		r.err = err
+		return
+	}
+	if err := requireNotEmpty("Plist", "key", opts.Key); err != nil {
+		r.err = err
+		return
+	}
 	r.addResource(newPlistExtension(domain, opts), opts.DependsOn)
 }

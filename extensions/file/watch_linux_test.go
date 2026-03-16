@@ -36,8 +36,8 @@ func TestWatch_DetectsModification(t *testing.T) {
 		if evt.ResourceID != f.ID() {
 			t.Errorf("event resource = %q, want %q", evt.ResourceID, f.ID())
 		}
-		if evt.Reason != "inotify" {
-			t.Errorf("event reason = %q, want inotify", evt.Reason)
+		if evt.Detail != "inotify" {
+			t.Errorf("event reason = %q, want inotify", evt.Detail)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for inotify event")

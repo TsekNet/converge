@@ -32,9 +32,32 @@ type Poller interface {
 	PollInterval() time.Duration
 }
 
+// EventKind classifies how an event was generated.
+type EventKind int
+
+const (
+	EventWatch EventKind = iota // OS-level watcher detected change
+	EventPoll                   // periodic poll detected drift
+	EventRetry                  // scheduled retry after failure
+)
+
+func (k EventKind) String() string {
+	switch k {
+	case EventWatch:
+		return "watch"
+	case EventPoll:
+		return "poll"
+	case EventRetry:
+		return "retry"
+	default:
+		return "unknown"
+	}
+}
+
 // Event signals that a resource may need reconciliation.
 type Event struct {
 	ResourceID string
-	Reason     string
+	Kind       EventKind
+	Detail     string // human-readable context (e.g. "inotify", "kqueue")
 	Time       time.Time
 }

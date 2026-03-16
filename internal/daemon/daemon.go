@@ -17,33 +17,13 @@ import (
 )
 
 const (
-	defaultPollInterval = 30 * time.Second
-	defaultMaxRetries   = 3
-	defaultRetryBase    = 5 * time.Second
-	maxRetryDelay       = 5 * time.Minute
+	defaultPollInterval    = 30 * time.Second
+	defaultMaxRetries      = 3
+	defaultRetryBase       = 5 * time.Second
+	defaultCoalesceWindow  = 500 * time.Millisecond
+	defaultRatePerResource = 0.1 // 1 event per 10 seconds
+	defaultRateBurst       = 3
 )
-
-// Event reason constants used for routing logic.
-const (
-	reasonPoll  = "poll detected drift"
-	reasonRetry = "retry"
-)
-
-// Compliance represents a resource's convergence state.
-type Compliance int
-
-const (
-	Compliant    Compliance = iota
-	Noncompliant            // exceeded max retries
-	Converging              // actively retrying
-)
-
-// ResourceStatus tracks runtime state for a resource in daemon mode.
-type ResourceStatus struct {
-	Compliance Compliance
-	RetryCount int
-	LastError  error
-}
 
 // Options controls daemon behavior.
 type Options struct {
@@ -53,45 +33,7 @@ type Options struct {
 	DefaultPollFreq time.Duration // poll interval for resources without Watcher or Poller
 	MaxRetries      int           // max retries before marking noncompliant (0 = use default)
 	RetryBaseDelay  time.Duration // base delay for exponential backoff (0 = use default)
-}
-
-// resourceState tracks per-resource retry and compliance state.
-type resourceState struct {
-	mu         sync.Mutex
-	retryCount int
-	nextRetry  time.Time
-	compliance Compliance
-	lastError  error
-}
-
-func (rs *resourceState) reset() {
-	rs.mu.Lock()
-	rs.retryCount = 0
-	rs.compliance = Compliant
-	rs.lastError = nil
-	rs.nextRetry = time.Time{}
-	rs.mu.Unlock()
-}
-
-func (rs *resourceState) shouldProcess(reason string) bool {
-	rs.mu.Lock()
-	defer rs.mu.Unlock()
-
-	// During backoff, skip poll events.
-	if rs.compliance == Converging && reason == reasonPoll {
-		return false
-	}
-	// During backoff window, only process scheduled retries.
-	if !rs.nextRetry.IsZero() && time.Now().Before(rs.nextRetry) && reason != reasonRetry {
-		return false
-	}
-	// Noncompliant resources reset on new external Watch events.
-	if rs.compliance == Noncompliant && reason != reasonRetry && reason != reasonPoll {
-		rs.retryCount = 0
-		rs.compliance = Converging
-		deck.Infof("resetting retries for external event")
-	}
-	return true
+	CoalesceWindow  time.Duration // event coalescing window (0 = use default)
 }
 
 // Daemon watches resources for drift and re-converges them.
@@ -99,9 +41,8 @@ type Daemon struct {
 	graph      *graph.Graph
 	printer    output.Printer
 	opts       Options
-	states     map[string]*resourceState
-	mu         sync.RWMutex
-	initErr    error // error from initial convergence
+	retries    *retryManager
+	initErr    error    // error from initial convergence
 	processing sync.Map // tracks in-progress resource IDs
 }
 
@@ -117,29 +58,17 @@ func New(g *graph.Graph, printer output.Printer, opts Options) *Daemon {
 		opts.RetryBaseDelay = defaultRetryBase
 	}
 
-	states := make(map[string]*resourceState)
+	rm := newRetryManager(opts.MaxRetries, opts.RetryBaseDelay)
 	for _, node := range g.Nodes() {
-		states[node.Ext.ID()] = &resourceState{}
+		rm.register(node.Ext.ID())
 	}
 
-	return &Daemon{graph: g, printer: printer, opts: opts, states: states}
+	return &Daemon{graph: g, printer: printer, opts: opts, retries: rm}
 }
 
 // Status returns the current compliance state of a resource.
 func (d *Daemon) Status(id string) ResourceStatus {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	s, ok := d.states[id]
-	if !ok {
-		return ResourceStatus{}
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return ResourceStatus{
-		Compliance: s.compliance,
-		RetryCount: s.retryCount,
-		LastError:  s.lastError,
-	}
+	return d.retries.status(id)
 }
 
 // Run performs initial convergence, then watches all resources until ctx
@@ -160,15 +89,47 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Phase 2: start watchers/pollers.
-	eventCh := make(chan extensions.Event, 256)
+	// Phase 2: start watchers/pollers feeding raw events.
+	rawEvents := make(chan extensions.Event, 256)
 	watchCtx, watchCancel := context.WithCancel(ctx)
 	defer watchCancel()
 
-	wg := d.startWatchers(watchCtx, eventCh)
+	wg := d.startWatchers(watchCtx, rawEvents)
 
-	// Phase 3: event loop with retry/backoff.
-	d.eventLoop(ctx, eventCh)
+	// Phase 3: split events into coalesced (watch/poll) and direct (retry).
+	coalescedIDs := make(chan string, 256)
+	retryIDs := make(chan string, 64)
+	window := d.opts.CoalesceWindow
+	if window == 0 {
+		window = defaultCoalesceWindow
+	}
+	coal := newCoalescer(window, coalescedIDs)
+	go coal.run(watchCtx)
+
+	// Bridge: raw events -> coalescer or direct retry channel.
+	eventMeta := &sync.Map{} // resourceID -> last extensions.Event
+	go func() {
+		for {
+			select {
+			case <-watchCtx.Done():
+				return
+			case evt := <-rawEvents:
+				eventMeta.Store(evt.ResourceID, evt)
+				if evt.Kind == extensions.EventRetry {
+					select {
+					case retryIDs <- evt.ResourceID:
+					default:
+					}
+				} else {
+					coal.submit(evt)
+				}
+			}
+		}
+	}()
+
+	// Phase 4: rate-limited event loop reads from both channels.
+	rl := newResourceRateLimiter(defaultRatePerResource, defaultRateBurst)
+	d.processLoop(ctx, coalescedIDs, retryIDs, eventMeta, rl, rawEvents)
 
 	watchCancel()
 	wg.Wait()
@@ -206,7 +167,6 @@ func (d *Daemon) startWatchers(ctx context.Context, eventCh chan extensions.Even
 }
 
 // poll periodically checks a resource and sends an event if it drifts.
-// Skips Check for noncompliant resources to avoid wasting cycles.
 func (d *Daemon) poll(ctx context.Context, ext extensions.Extension, interval time.Duration, events chan<- extensions.Event) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -216,12 +176,7 @@ func (d *Daemon) poll(ctx context.Context, ext extensions.Extension, interval ti
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// Skip polling for noncompliant resources.
-			rs := d.states[ext.ID()]
-			rs.mu.Lock()
-			nc := rs.compliance == Noncompliant
-			rs.mu.Unlock()
-			if nc {
+			if d.retries.isNoncompliant(ext.ID()) {
 				continue
 			}
 
@@ -237,7 +192,8 @@ func (d *Daemon) poll(ctx context.Context, ext extensions.Extension, interval ti
 				select {
 				case events <- extensions.Event{
 					ResourceID: ext.ID(),
-					Reason:     reasonPoll,
+					Kind:       extensions.EventPoll,
+					Detail:     "poll detected drift",
 					Time:       time.Now(),
 				}:
 				case <-ctx.Done():
@@ -248,94 +204,85 @@ func (d *Daemon) poll(ctx context.Context, ext extensions.Extension, interval ti
 	}
 }
 
-// eventLoop processes incoming events. Each resource is converged in its
-// own goroutine, but only one convergence runs per resource at a time.
-func (d *Daemon) eventLoop(ctx context.Context, events chan extensions.Event) {
+// processLoop reads coalesced and retry resource IDs, applies rate limiting,
+// and converges each resource in its own goroutine.
+func (d *Daemon) processLoop(ctx context.Context, coalescedIDs, retryIDs <-chan string, eventMeta *sync.Map, rl *resourceRateLimiter, rawEvents chan extensions.Event) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case evt := <-events:
-			node := d.graph.Node(evt.ResourceID)
-			if node == nil {
-				deck.Warningf("event for unknown resource: %s", evt.ResourceID)
-				continue
-			}
-
-			rs := d.states[evt.ResourceID]
-			if !rs.shouldProcess(evt.Reason) {
-				continue
-			}
-
-			// Prevent concurrent convergence of the same resource.
-			if _, loaded := d.processing.LoadOrStore(evt.ResourceID, true); loaded {
-				continue
-			}
-
-			deck.Infof("drift detected: %s (%s)", evt.ResourceID, evt.Reason)
-			go func(ext extensions.Extension, rs *resourceState) {
-				defer d.processing.Delete(ext.ID())
-				d.convergeResource(ctx, ext, rs, events)
-			}(node.Ext, rs)
+		case id := <-coalescedIDs:
+			d.handleResourceEvent(ctx, id, eventMeta, rl, rawEvents)
+		case id := <-retryIDs:
+			d.handleResourceEvent(ctx, id, eventMeta, rl, rawEvents)
 		}
 	}
 }
 
+func (d *Daemon) handleResourceEvent(ctx context.Context, id string, eventMeta *sync.Map, rl *resourceRateLimiter, rawEvents chan extensions.Event) {
+	node := d.graph.Node(id)
+	if node == nil {
+		return
+	}
+
+	kind := extensions.EventWatch
+	if v, ok := eventMeta.Load(id); ok {
+		kind = v.(extensions.Event).Kind
+	}
+
+	if !d.retries.shouldProcess(id, kind) {
+		return
+	}
+
+	// Rate limit watch/poll events, not retries (retries have their own backoff).
+	if kind != extensions.EventRetry && !rl.allow(ctx, id) {
+		return
+	}
+
+	if _, loaded := d.processing.LoadOrStore(id, true); loaded {
+		return
+	}
+
+	deck.Infof("drift detected: %s (%s)", id, kind)
+	go func(ext extensions.Extension, id string) {
+		defer d.processing.Delete(id)
+		d.convergeResource(ctx, ext, id, rawEvents)
+	}(node.Ext, id)
+}
+
 // convergeResource runs Check/Apply with retry/backoff logic.
-func (d *Daemon) convergeResource(ctx context.Context, ext extensions.Extension, rs *resourceState, events chan<- extensions.Event) {
+func (d *Daemon) convergeResource(ctx context.Context, ext extensions.Extension, id string, events chan<- extensions.Event) {
 	applyCtx, cancel := context.WithTimeout(ctx, d.opts.Timeout)
 	defer cancel()
 
 	state, err := ext.Check(applyCtx)
 	if err != nil {
-		d.handleFailure(ctx, ext, rs, err, events)
+		d.scheduleRetry(ctx, id, err, events)
 		return
 	}
 	if state == nil || state.InSync {
-		rs.reset()
+		d.retries.reset(id)
 		return
 	}
 
 	result, err := ext.Apply(applyCtx)
 	if err != nil {
-		d.handleFailure(ctx, ext, rs, err, events)
+		d.scheduleRetry(ctx, id, err, events)
 		return
 	}
 
 	if result != nil {
 		d.printer.ApplyResult(ext, result)
 	}
-	rs.reset()
+	d.retries.reset(id)
 }
 
-// handleFailure increments retry count with exponential backoff.
-// The retry timer goroutine respects ctx for clean shutdown.
-func (d *Daemon) handleFailure(ctx context.Context, ext extensions.Extension, rs *resourceState, err error, events chan<- extensions.Event) {
-	rs.mu.Lock()
-	rs.retryCount++
-	rs.lastError = err
-
-	if rs.retryCount >= d.opts.MaxRetries {
-		rs.compliance = Noncompliant
-		deck.Warningf("resource %s noncompliant after %d retries: %v", ext.ID(), rs.retryCount, err)
-		rs.mu.Unlock()
-		return
+// scheduleRetry records a failure and schedules a retry event after backoff.
+func (d *Daemon) scheduleRetry(ctx context.Context, id string, err error, events chan<- extensions.Event) {
+	delay := d.retries.recordFailure(id, err)
+	if delay == 0 {
+		return // noncompliant, no more retries
 	}
-
-	rs.compliance = Converging
-	delay := d.opts.RetryBaseDelay
-	for i := 1; i < rs.retryCount; i++ {
-		delay *= 2
-		if delay > maxRetryDelay {
-			delay = maxRetryDelay
-			break
-		}
-	}
-	rs.nextRetry = time.Now().Add(delay)
-	retryCount := rs.retryCount
-	rs.mu.Unlock()
-
-	deck.Infof("retry %d/%d for %s in %v: %v", retryCount, d.opts.MaxRetries, ext.ID(), delay, err)
 
 	go func() {
 		timer := time.NewTimer(delay)
@@ -344,8 +291,9 @@ func (d *Daemon) handleFailure(ctx context.Context, ext extensions.Extension, rs
 		case <-timer.C:
 			select {
 			case events <- extensions.Event{
-				ResourceID: ext.ID(),
-				Reason:     reasonRetry,
+				ResourceID: id,
+				Kind:       extensions.EventRetry,
+				Detail:     "scheduled retry",
 				Time:       time.Now(),
 			}:
 			default:

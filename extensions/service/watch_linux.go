@@ -61,7 +61,7 @@ func (s *Service) Watch(ctx context.Context, events chan<- extensions.Event) err
 			select {
 			case events <- extensions.Event{
 				ResourceID: s.ID(),
-				Reason:     "dbus PropertiesChanged",
+				Kind: extensions.EventWatch, Detail: "dbus PropertiesChanged",
 				Time:       time.Now(),
 			}:
 			case <-ctx.Done():

@@ -82,8 +82,9 @@ func (a *App) BuildGraph(name string) (*graph.Graph, error) {
 	}
 
 	run := newRun(a)
-	if err := runBlueprint(entry.fn, run); err != nil {
-		return nil, err
+	entry.fn(run)
+	if run.Err() != nil {
+		return nil, run.Err()
 	}
 
 	if err := autoedge.AddAutoEdges(run.Graph()); err != nil {
@@ -102,24 +103,5 @@ func (a *App) RunPlan(name string, printer output.Printer) (int, error) {
 		return exit.Error, err
 	}
 	return engine.RunPlanDAG(g, printer, a.EngineOpts)
-}
-
-// runBlueprint executes a blueprint function and recovers expected panics
-// (duplicate resources, missing dependencies) as errors. Unexpected panics
-// (nil pointer, index out of range) are re-panicked to preserve stack traces.
-func runBlueprint(fn Blueprint, run *Run) (err error) {
-	defer func() {
-		r := recover()
-		if r == nil {
-			return
-		}
-		if s, ok := r.(string); ok {
-			err = fmt.Errorf("%s", s)
-			return
-		}
-		panic(r)
-	}()
-	fn(run)
-	return nil
 }
 

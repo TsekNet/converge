@@ -149,16 +149,13 @@ func TestRun_Include(t *testing.T) {
 	}
 }
 
-func TestRun_Include_PanicsOnMissing(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("Include() should panic on missing blueprint")
-		}
-	}()
-
+func TestRun_Include_ErrorOnMissing(t *testing.T) {
 	app := New()
 	run := newRun(app)
 	run.Include("nonexistent")
+	if run.Err() == nil {
+		t.Error("Include() should set error on missing blueprint")
+	}
 }
 
 func TestRun_FirewallDefaults(t *testing.T) {
@@ -181,13 +178,10 @@ func TestRun_FirewallAbsent(t *testing.T) {
 	}
 }
 
-func TestRun_FirewallPanicsOnEmptyName(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("Firewall() should panic on empty name")
-		}
-	}()
-
+func TestRun_FirewallErrorOnEmptyName(t *testing.T) {
 	run := newRun(New())
 	run.Firewall("", FirewallOpts{Port: 22})
+	if run.Err() == nil {
+		t.Error("Firewall() should set error on empty name")
+	}
 }

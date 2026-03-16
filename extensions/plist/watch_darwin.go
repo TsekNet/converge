@@ -70,7 +70,7 @@ func (p *Plist) Watch(ctx context.Context, events chan<- extensions.Event) error
 		select {
 		case events <- extensions.Event{
 			ResourceID: p.ID(),
-			Reason:     "kqueue",
+			Kind: extensions.EventWatch, Detail: "kqueue",
 			Time:       time.Now(),
 		}:
 		case <-ctx.Done():

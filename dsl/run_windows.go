@@ -3,19 +3,37 @@
 package dsl
 
 func (r *Run) Registry(key string, opts RegistryOpts) {
-	mustNotBeEmpty("Registry", "key", key)
+	if err := requireNotEmpty("Registry", "key", key); err != nil {
+		r.err = err
+		return
+	}
 	r.addResource(newRegistryExtension(key, opts), opts.DependsOn)
 }
 
 func (r *Run) SecurityPolicy(name string, opts SecurityPolicyOpts) {
-	mustNotBeEmpty("SecurityPolicy", "name", name)
-	mustNotBeEmpty("SecurityPolicy", "category", opts.Category)
-	mustNotBeEmpty("SecurityPolicy", "key", opts.Key)
+	if err := requireNotEmpty("SecurityPolicy", "name", name); err != nil {
+		r.err = err
+		return
+	}
+	if err := requireNotEmpty("SecurityPolicy", "category", opts.Category); err != nil {
+		r.err = err
+		return
+	}
+	if err := requireNotEmpty("SecurityPolicy", "key", opts.Key); err != nil {
+		r.err = err
+		return
+	}
 	r.addResource(newSecurityPolicyExtension(name, opts), opts.DependsOn)
 }
 
 func (r *Run) AuditPolicy(name string, opts AuditPolicyOpts) {
-	mustNotBeEmpty("AuditPolicy", "name", name)
-	mustNotBeEmpty("AuditPolicy", "subcategory", opts.Subcategory)
+	if err := requireNotEmpty("AuditPolicy", "name", name); err != nil {
+		r.err = err
+		return
+	}
+	if err := requireNotEmpty("AuditPolicy", "subcategory", opts.Subcategory); err != nil {
+		r.err = err
+		return
+	}
 	r.addResource(newAuditPolicyExtension(name, opts), opts.DependsOn)
 }

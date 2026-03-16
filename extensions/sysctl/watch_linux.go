@@ -88,7 +88,7 @@ func (s *Sysctl) Watch(ctx context.Context, events chan<- extensions.Event) erro
 		select {
 		case events <- extensions.Event{
 			ResourceID: s.ID(),
-			Reason:     "inotify",
+			Kind: extensions.EventWatch, Detail: "inotify",
 			Time:       time.Now(),
 		}:
 		case <-ctx.Done():

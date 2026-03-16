@@ -107,7 +107,7 @@ func (f *File) Watch(ctx context.Context, events chan<- extensions.Event) error 
 		select {
 		case events <- extensions.Event{
 			ResourceID: f.ID(),
-			Reason:     "inotify",
+			Kind: extensions.EventWatch, Detail: "inotify",
 			Time:       time.Now(),
 		}:
 		case <-ctx.Done():
