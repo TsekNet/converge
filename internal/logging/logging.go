@@ -3,13 +3,13 @@ package logging
 import (
 	"os"
 
+	"github.com/TsekNet/converge/internal/version"
 	"github.com/google/deck"
 	"github.com/google/deck/backends/logger"
 )
 
-// AppID is the application identifier used for all log backends
-// (syslog, Windows Event Log, stderr).
-const AppID = "converge"
+// AppID re-exports the app name for platform-specific log init files.
+var AppID = version.App
 
 // Init sets up deck logging. Console (stderr) logging only appears in verbose mode
 // to avoid polluting the pretty terminal output. Syslog/eventlog backends are

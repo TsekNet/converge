@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/TsekNet/converge/extensions"
+	"github.com/TsekNet/converge/internal/version"
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
@@ -16,7 +17,7 @@ import (
 )
 
 const (
-	tableName = "converge"
+	tableName = version.App
 	chainIn   = "input"
 	chainOut  = "output"
 )

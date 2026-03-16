@@ -7,6 +7,7 @@ import (
 
 	"github.com/TsekNet/converge/internal/exit"
 	"github.com/TsekNet/converge/internal/logging"
+	"github.com/TsekNet/converge/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +18,7 @@ var parallel int
 var detailedExitCodes bool
 
 var rootCmd = &cobra.Command{
-	Use:   "converge",
+	Use:   version.App,
 	Short: "Desired State Configuration, Compiled",
 	Long:  "Converge manages system state using Go blueprints compiled into a single binary.",
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
