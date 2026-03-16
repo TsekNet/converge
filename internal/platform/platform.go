@@ -10,7 +10,7 @@ import (
 type Info struct {
 	OS         string // "linux", "darwin", "windows"
 	Distro     string // "ubuntu", "fedora", "macos", "windows"
-	PkgManager string // "apt", "dnf", "brew", "choco", ""
+	PkgManager string // "apt", "dnf", "brew", "winget", "choco", ""
 	InitSystem string // "systemd", "launchd", "windows", ""
 	Arch       string // "amd64", "arm64"
 }
@@ -83,11 +83,11 @@ func detectDarwinPkgManager() string {
 }
 
 func detectWindowsPkgManager() string {
-	if _, err := exec.LookPath("choco"); err == nil {
-		return "choco"
-	}
 	if _, err := exec.LookPath("winget"); err == nil {
 		return "winget"
+	}
+	if _, err := exec.LookPath("choco"); err == nil {
+		return "choco"
 	}
 	return ""
 }

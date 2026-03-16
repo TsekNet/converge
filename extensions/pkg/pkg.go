@@ -7,7 +7,7 @@ import (
 	"github.com/TsekNet/converge/extensions"
 )
 
-// PackageManager abstracts OS-specific package operations (apt, brew, choco, etc.).
+// PackageManager abstracts OS-specific package operations (apt, brew, winget, etc.).
 type PackageManager interface {
 	Name() string
 	IsInstalled(ctx context.Context, name string) (bool, error)
