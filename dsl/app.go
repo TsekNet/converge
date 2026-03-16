@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/TsekNet/converge/internal/engine"
+	"github.com/TsekNet/converge/internal/graph"
 	"github.com/TsekNet/converge/internal/output"
 	"github.com/TsekNet/converge/internal/version"
 )
@@ -71,6 +72,21 @@ func (a *App) Extensions() []Item {
 
 func (a *App) Version() string {
 	return version.Version
+}
+
+// BuildGraph constructs the resource dependency graph for a named blueprint.
+func (a *App) BuildGraph(name string) (*graph.Graph, error) {
+	entry, ok := a.blueprints[name]
+	if !ok {
+		return nil, fmt.Errorf("blueprint %q not found", name)
+	}
+
+	run := newRun(a)
+	if err := runBlueprint(entry.fn, run); err != nil {
+		return nil, err
+	}
+
+	return run.Graph(), nil
 }
 
 func (a *App) RunPlan(name string, printer output.Printer) (int, error) {
