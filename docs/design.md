@@ -428,3 +428,28 @@ Endpoints are not servers:
 | Persona/profile | Stateless | Stateful: home dir, preferences, enrolled identities |
 
 Even with an immutable OS base, endpoints accumulate mutable state after first boot. Converge detects and corrects that drift without requiring a reimaging cycle.
+
+---
+
+## MDM and Converge
+
+MDM platforms (Apple DDM, Intune, Fleet) use a server-push model: a cloud server owns the desired state, delivers profiles and policies to devices via push notifications (APNs, WNS), and devices check in periodically to report compliance.
+
+Converge is a local daemon with no server dependency. Desired state lives in compiled blueprints on the device itself. Drift detection uses OS kernel events, not server check-ins.
+
+| | Converge | MDM (DDM / Intune / Fleet) |
+|---|---|---|
+| State authority | Local blueprint on device | Cloud MDM server |
+| Drift trigger | OS kernel events (ms latency) | Server push + device check-in (s to min latency) |
+| Re-convergence scope | DAG subgraph (affected resource + dependents) | Entire profile or policy |
+| Server required | No | Yes |
+| Scope | Packages, files, services, firewall, registry, sysctl | Profiles, policies, apps, compliance, enrollment |
+| Enforcement model | Continuous local daemon | Periodic check-in + server reconciliation |
+
+They solve different problems. MDM manages device lifecycle, enrollment, compliance reporting, and app deployment at fleet scale. Converge enforces low-level system configuration with instant drift correction. They are complementary:
+
+1. **MDM enrolls the device** and delivers high-level policy (encryption required, OS version minimum, approved apps).
+2. **Converge enforces granular system state** that MDM profiles cannot express: specific file contents, service configurations, firewall rules, registry keys, kernel parameters.
+3. **MDM reports compliance** to a central dashboard. Converge fixes drift locally before the next MDM check-in even notices it.
+
+A common deployment: Fleet manages enrollment and compliance visibility, converge runs as a daemon on each endpoint handling configuration enforcement that would otherwise require custom osquery checks or scripts.
