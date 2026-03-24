@@ -48,3 +48,4 @@ func TestAuditPolicy_New(t *testing.T) {
 		t.Error("Failure should be false")
 	}
 }
+

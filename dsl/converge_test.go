@@ -2,7 +2,10 @@ package dsl
 
 import (
 	"slices"
+	"strings"
 	"testing"
+
+	"github.com/TsekNet/converge/internal/graph"
 )
 
 func TestApp_Blueprints(t *testing.T) {
@@ -217,3 +220,106 @@ func TestRun_Firewall(t *testing.T) {
 		})
 	}
 }
+
+func TestRun_DuplicateResource(t *testing.T) {
+	t.Parallel()
+
+	run := newRun(New())
+	run.File("/etc/motd", FileOpts{Content: "hello"})
+	run.File("/etc/motd", FileOpts{Content: "world"})
+
+	if run.Err() == nil {
+		t.Fatal("expected error for duplicate resource")
+	}
+	if !strings.Contains(run.Err().Error(), "duplicate") {
+		t.Errorf("error should mention duplicate, got: %v", run.Err())
+	}
+}
+
+func TestRun_DependsOn_MissingDep(t *testing.T) {
+	t.Parallel()
+
+	run := newRun(New())
+	run.File("/etc/motd", FileOpts{
+		Content: "hello",
+		Meta:    ResourceMeta{DependsOn: []string{"package:nonexistent"}},
+	})
+
+	if run.Err() == nil {
+		t.Fatal("expected error for missing dependency")
+	}
+	if !strings.Contains(run.Err().Error(), "not found") {
+		t.Errorf("error should mention not found, got: %v", run.Err())
+	}
+}
+
+func TestRun_DependsOn_Valid(t *testing.T) {
+	t.Parallel()
+
+	run := newRun(New())
+	run.Package("nginx", PackageOpts{State: Present})
+	run.Service("nginx", ServiceOpts{
+		State: Running,
+		Meta:  ResourceMeta{DependsOn: []string{"package:nginx"}},
+	})
+
+	if run.Err() != nil {
+		t.Fatalf("unexpected error: %v", run.Err())
+	}
+	if len(run.Resources()) != 2 {
+		t.Errorf("resource count = %d, want 2", len(run.Resources()))
+	}
+}
+
+func TestRun_EmptyName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		fn   func(r *Run)
+	}{
+		{"Package", func(r *Run) { r.Package("", PackageOpts{State: Present}) }},
+		{"Service", func(r *Run) { r.Service("", ServiceOpts{State: Running}) }},
+		{"Exec", func(r *Run) { r.Exec("", ExecOpts{Command: "echo hi"}) }},
+		{"User", func(r *Run) { r.User("", UserOpts{Shell: "/bin/bash"}) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			run := newRun(New())
+			tt.fn(run)
+			if run.Err() == nil {
+				t.Errorf("%s with empty name should set error", tt.name)
+			}
+		})
+	}
+}
+
+func TestRun_Exec_EmptyCommand(t *testing.T) {
+	t.Parallel()
+
+	run := newRun(New())
+	run.Exec("test", ExecOpts{})
+
+	if run.Err() == nil {
+		t.Fatal("Exec with empty command should set error")
+	}
+	if !strings.Contains(run.Err().Error(), "command") {
+		t.Errorf("error should mention command, got: %v", run.Err())
+	}
+}
+
+func TestRun_Include_NoApp(t *testing.T) {
+	t.Parallel()
+
+	run := &Run{graph: graph.New()}
+	run.Include("anything")
+
+	if run.Err() == nil {
+		t.Fatal("Include with nil app should set error")
+	}
+	if !strings.Contains(run.Err().Error(), "no app context") {
+		t.Errorf("error should mention no app context, got: %v", run.Err())
+	}
+}
+

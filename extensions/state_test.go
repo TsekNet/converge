@@ -50,3 +50,25 @@ func TestState(t *testing.T) {
 		})
 	}
 }
+
+func TestEventKind_String(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		kind EventKind
+		want string
+	}{
+		{EventWatch, "watch"},
+		{EventPoll, "poll"},
+		{EventRetry, "retry"},
+		{EventCondition, "condition"},
+		{EventKind(99), "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			t.Parallel()
+			if got := tt.kind.String(); got != tt.want {
+				t.Errorf("EventKind(%d).String() = %q, want %q", tt.kind, got, tt.want)
+			}
+		})
+	}
+}

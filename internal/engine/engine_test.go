@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/TsekNet/converge/extensions"
 	"github.com/TsekNet/converge/internal/graph"
@@ -195,5 +196,82 @@ func TestRunApplyDAG_WithDependencies(t *testing.T) {
 	}
 	if code != 2 {
 		t.Errorf("exit code = %d, want 2 (changed)", code)
+	}
+}
+
+type trackingPrinter struct {
+	discardPrinter
+	maxNameLen int
+}
+
+func (tp *trackingPrinter) SetMaxNameLen(n int) { tp.maxNameLen = n }
+
+var _ nameAware = (*trackingPrinter)(nil)
+
+func TestSetMaxNameLen(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		exts    []extensions.Extension
+		wantLen int
+	}{
+		{"single resource", []extensions.Extension{
+			&mockExtension{id: "file:/a", name: "File /a"},
+		}, len("File /a")},
+		{"picks longest", []extensions.Extension{
+			&mockExtension{id: "file:/a", name: "File /a"},
+			&mockExtension{id: "pkg:nginx", name: "Package nginx"},
+		}, len("Package nginx")},
+		{"empty list", nil, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tp := &trackingPrinter{}
+			setMaxNameLen(tt.exts, tp)
+			if tp.maxNameLen != tt.wantLen {
+				t.Errorf("maxNameLen = %d, want %d", tp.maxNameLen, tt.wantLen)
+			}
+		})
+	}
+}
+
+func TestSetMaxNameLen_NonAware(t *testing.T) {
+	t.Parallel()
+
+	// discardPrinter does not implement nameAware: setMaxNameLen should be a no-op.
+	dp := &discardPrinter{}
+	setMaxNameLen([]extensions.Extension{
+		&mockExtension{id: "file:/a", name: "File /a"},
+	}, dp)
+	// No panic, no error: the function silently skips non-nameAware printers.
+}
+
+func TestWithTimeout_Zero(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	got, cancel := withTimeout(ctx, 0)
+	defer cancel()
+
+	if _, ok := got.Deadline(); ok {
+		t.Error("withTimeout(0) should return a context with no deadline")
+	}
+}
+
+func TestWithTimeout_NonZero(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	got, cancel := withTimeout(ctx, time.Second)
+	defer cancel()
+
+	deadline, ok := got.Deadline()
+	if !ok {
+		t.Fatal("withTimeout(1s) should return a context with a deadline")
+	}
+	if time.Until(deadline) <= 0 || time.Until(deadline) > time.Second {
+		t.Errorf("deadline should be ~1s from now, got %v", time.Until(deadline))
 	}
 }

@@ -1,0 +1,17 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 75%
+        threshold: 2%
+  precision: 1
+
+ignore:
+  - "blueprints/**"
+  - "cmd/**"
+  - "**/*_windows.go"
+  - "**/*_darwin.go"
+  - "extensions/firewall/firewall_linux.go"
+  - "internal/watch/dbus_linux.go"
+  - "internal/output/spinner.go"
+  - "internal/output/vt_other.go"
