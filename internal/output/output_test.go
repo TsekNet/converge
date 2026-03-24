@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -219,6 +220,160 @@ func TestSerialPrinter_PlanResult(t *testing.T) {
 				t.Error("PlanResult() produced no output")
 			}
 		})
+	}
+}
+
+func TestJSONPrinter_PlanResult_Structure(t *testing.T) {
+	out := captureStdout(t, func() {
+		p := NewJSONPrinter()
+		p.BlueprintHeader("test")
+		ext1 := &stubExt{id: "file:/etc/a", name: "File /etc/a"}
+		ext2 := &stubExt{id: "file:/etc/b", name: "File /etc/b"}
+		p.PlanResult(ext1, &extensions.State{InSync: true})
+		p.PlanResult(ext2, &extensions.State{
+			InSync: false,
+			Changes: []extensions.Change{
+				{Property: "content", To: "hello", Action: "add"},
+				{Property: "mode", From: "0755", To: "0644", Action: "modify"},
+			},
+		})
+		p.PlanSummary(1, 1, 2)
+	})
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\nOutput: %s", err, out)
+	}
+	resources, ok := result["resources"].([]interface{})
+	if !ok || len(resources) != 2 {
+		t.Fatalf("expected 2 resources, got %v", result["resources"])
+	}
+
+	r0 := resources[0].(map[string]interface{})
+	if r0["status"] != "ok" {
+		t.Errorf("resources[0].status = %v, want ok", r0["status"])
+	}
+	if r0["action"] != "in_sync" {
+		t.Errorf("resources[0].action = %v, want in_sync", r0["action"])
+	}
+
+	r1 := resources[1].(map[string]interface{})
+	if r1["status"] != "pending" {
+		t.Errorf("resources[1].status = %v, want pending", r1["status"])
+	}
+	if r1["action"] != "needs_change" {
+		t.Errorf("resources[1].action = %v, want needs_change", r1["action"])
+	}
+	changes, ok := r1["changes"].([]interface{})
+	if !ok || len(changes) != 2 {
+		t.Fatalf("expected 2 changes, got %v", r1["changes"])
+	}
+	c0 := changes[0].(map[string]interface{})
+	if c0["property"] != "content" || c0["action"] != "add" {
+		t.Errorf("changes[0] = %v, want content/add", c0)
+	}
+	c1 := changes[1].(map[string]interface{})
+	if c1["property"] != "mode" || c1["from"] != "0755" || c1["to"] != "0644" {
+		t.Errorf("changes[1] = %v, want mode/0755/0644", c1)
+	}
+}
+
+func TestJSONPrinter_ApplyResult_WithError(t *testing.T) {
+	out := captureStdout(t, func() {
+		p := NewJSONPrinter()
+		p.BlueprintHeader("test")
+		ext := &stubExt{id: "file:/etc/a", name: "File /etc/a"}
+		p.ApplyResult(ext, &extensions.Result{
+			Status:   extensions.StatusFailed,
+			Message:  "failed",
+			Err:      fmt.Errorf("disk full"),
+			Duration: 5 * time.Millisecond,
+		})
+		p.Summary(0, 0, 1, 1, 100)
+	})
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\nOutput: %s", err, out)
+	}
+	resources := result["resources"].([]interface{})
+	r0 := resources[0].(map[string]interface{})
+	errField, ok := r0["error"]
+	if !ok || errField == "" {
+		t.Errorf("expected error field, got %v", r0)
+	}
+	if errField != "disk full" {
+		t.Errorf("error = %v, want 'disk full'", errField)
+	}
+}
+
+func TestJSONPrinter_Error_AddsResource(t *testing.T) {
+	out := captureStdout(t, func() {
+		p := NewJSONPrinter()
+		p.BlueprintHeader("test")
+		ext := &stubExt{id: "file:/etc/a", name: "File /etc/a"}
+		p.Error(ext, fmt.Errorf("check failed"))
+		p.Summary(0, 0, 1, 1, 50)
+	})
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\nOutput: %s", err, out)
+	}
+	resources := result["resources"].([]interface{})
+	if len(resources) != 1 {
+		t.Fatalf("expected 1 resource, got %d", len(resources))
+	}
+	r0 := resources[0].(map[string]interface{})
+	if r0["status"] != "failed" {
+		t.Errorf("status = %v, want failed", r0["status"])
+	}
+	if r0["error"] != "check failed" {
+		t.Errorf("error = %v, want 'check failed'", r0["error"])
+	}
+}
+
+func TestSerialPrinter_Error(t *testing.T) {
+	ext := &stubExt{id: "file:/etc/a", name: "File /etc/a"}
+	out := captureStdout(t, func() {
+		p := NewSerialPrinter()
+		p.Error(ext, fmt.Errorf("permission denied"))
+	})
+	if !strings.Contains(out, "permission denied") {
+		t.Errorf("output %q does not contain error message", out)
+	}
+}
+
+func TestSerialPrinter_PlanSummary(t *testing.T) {
+	out := captureStdout(t, func() {
+		p := NewSerialPrinter()
+		p.PlanSummary(2, 3, 5)
+	})
+	if !strings.Contains(out, "PLAN") {
+		t.Errorf("output %q does not contain PLAN", out)
+	}
+	if !strings.Contains(out, "2 to change") {
+		t.Errorf("output %q does not contain change count", out)
+	}
+}
+
+func TestSerialPrinter_ResourceChecking_GroupHeader(t *testing.T) {
+	out := captureStdout(t, func() {
+		p := NewSerialPrinter()
+		ext1 := &stubExt{id: "file:/etc/a", name: "File /etc/a"}
+		ext2 := &stubExt{id: "file:/etc/b", name: "File /etc/b"}
+		ext3 := &stubExt{id: "pkg:git", name: "Package git"}
+		p.ResourceChecking(ext1, 1, 3)
+		p.ResourceChecking(ext2, 2, 3)
+		p.ResourceChecking(ext3, 3, 3)
+	})
+	// "File" group header should appear exactly once despite two File resources
+	if strings.Count(out, "  File\n") != 1 {
+		t.Errorf("expected File group header once, got output:\n%s", out)
+	}
+	// "Package" group header should appear for the new type
+	if !strings.Contains(out, "  Package\n") {
+		t.Errorf("expected Package group header, got output:\n%s", out)
 	}
 }
 

@@ -71,6 +71,38 @@ func TestDetectLinuxInitSystem(t *testing.T) {
 	t.Logf("Detected init system: %q", init)
 }
 
+func TestDetect_LinuxAssertions(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS != "linux" {
+		t.Skip("linux only")
+	}
+
+	info := Detect()
+
+	if info.OS != "linux" {
+		t.Errorf("OS = %q, want %q", info.OS, "linux")
+	}
+	if info.Arch != runtime.GOARCH {
+		t.Errorf("Arch = %q, want %q", info.Arch, runtime.GOARCH)
+	}
+	if info.Distro == "" || info.Distro == "linux" {
+		t.Errorf("Distro = %q, want actual distro name (e.g. ubuntu)", info.Distro)
+	}
+	if info.InitSystem != "systemd" && info.InitSystem != "openrc" {
+		t.Errorf("InitSystem = %q, want systemd or openrc", info.InitSystem)
+	}
+}
+
+func TestIsRoot(t *testing.T) {
+	t.Parallel()
+
+	// Tests never run as root, so IsRoot should return false.
+	if IsRoot() {
+		t.Error("IsRoot() = true, want false (tests should not run as root)")
+	}
+}
+
 func TestDetectDarwinPkgManager(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("darwin only")

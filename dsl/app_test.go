@@ -77,6 +77,29 @@ func TestApp_RunPlan(t *testing.T) {
 	}
 }
 
+func TestApp_Extensions(t *testing.T) {
+	t.Parallel()
+
+	app := New()
+	exts := app.Extensions()
+	if len(exts) == 0 {
+		t.Fatal("Extensions() returned empty list")
+	}
+	// Verify first and last known entries to catch accidental reordering or deletion.
+	if exts[0].Name != "File" {
+		t.Errorf("Extensions()[0].Name = %q, want %q", exts[0].Name, "File")
+	}
+	if exts[len(exts)-1].Name != "Secret" {
+		t.Errorf("Extensions()[last].Name = %q, want %q", exts[len(exts)-1].Name, "Secret")
+	}
+	// Every entry must have a non-empty description.
+	for _, item := range exts {
+		if item.Description == "" {
+			t.Errorf("Extensions() item %q has empty description", item.Name)
+		}
+	}
+}
+
 func TestApp_BuildGraph(t *testing.T) {
 	t.Parallel()
 

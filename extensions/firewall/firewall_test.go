@@ -2,6 +2,8 @@ package firewall
 
 import (
 	"testing"
+
+	"github.com/TsekNet/converge/extensions"
 )
 
 func TestFirewall_ID(t *testing.T) {
@@ -185,6 +187,51 @@ func TestBoolToState(t *testing.T) {
 			t.Parallel()
 			if got := boolToState(tt.input); got != tt.want {
 				t.Errorf("boolToState(%v) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResultChanged(t *testing.T) {
+	t.Parallel()
+
+	result, err := resultChanged("rule added")
+	if err != nil {
+		t.Fatalf("resultChanged() error = %v", err)
+	}
+	if !result.Changed {
+		t.Error("Changed = false, want true")
+	}
+	if result.Status != extensions.StatusChanged {
+		t.Errorf("Status = %v, want StatusChanged", result.Status)
+	}
+	if result.Message != "rule added" {
+		t.Errorf("Message = %q, want %q", result.Message, "rule added")
+	}
+}
+
+func TestValidateAddr(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		addr    string
+		wantErr bool
+	}{
+		{"valid IPv4", "10.0.0.1", false},
+		{"valid CIDR", "10.0.0.0/8", false},
+		{"valid CIDR /32", "192.168.1.1/32", false},
+		{"IPv6 rejected", "::1", true},
+		{"IPv6 CIDR rejected", "fd00::/8", true},
+		{"garbage", "not-an-ip", true},
+		{"empty string", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateAddr(tt.addr)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateAddr(%q) error = %v, wantErr %v", tt.addr, err, tt.wantErr)
 			}
 		})
 	}

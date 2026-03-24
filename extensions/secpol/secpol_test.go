@@ -2,6 +2,7 @@ package secpol
 
 import "testing"
 
+
 func TestSecurityPolicy_IDAndString(t *testing.T) {
 	tests := []struct {
 		category, key string
@@ -47,3 +48,4 @@ func TestSecurityPolicy_New(t *testing.T) {
 		t.Errorf("Value = %q, want %q", s.Value, "5")
 	}
 }
+

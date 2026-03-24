@@ -208,6 +208,63 @@ func TestMountPoint_Met(t *testing.T) {
 	})
 }
 
+func TestNetworkReachable_Wait_AlreadyMet(t *testing.T) {
+	t.Parallel()
+
+	// Start a listener before creating the condition, so it is already met.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	addr := ln.Addr().(*net.TCPAddr)
+
+	c := condition.NetworkReachable("127.0.0.1", addr.Port)
+
+	// Confirm Met is true before calling Wait.
+	met, err := c.Met(context.Background())
+	if err != nil {
+		t.Fatalf("Met() error = %v", err)
+	}
+	if !met {
+		t.Fatal("expected condition to be already met")
+	}
+
+	// Wait should return immediately since the condition is already satisfied.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	if err := c.Wait(ctx); err != nil {
+		t.Errorf("Wait() error = %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 1*time.Second {
+		t.Errorf("Wait() took %v, expected immediate return", elapsed)
+	}
+}
+
+func TestNetworkReachable_Wait_CtxCancel(t *testing.T) {
+	t.Parallel()
+
+	c := condition.NetworkReachable("240.0.0.1", 9)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() { errCh <- c.Wait(ctx) }()
+
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Error("expected non-nil error on ctx cancel")
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("Wait did not return after ctx cancel")
+	}
+}
+
 func TestCondition_String(t *testing.T) {
 	t.Parallel()
 

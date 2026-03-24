@@ -163,6 +163,30 @@ func TestRun_InShardWithSerial(t *testing.T) {
 	}
 }
 
+func TestRun_InShard_Deterministic(t *testing.T) {
+	t.Parallel()
+
+	run := newRun(New())
+
+	tests := []struct {
+		name    string
+		percent int
+		want    bool
+	}{
+		{"100 percent always true", 100, true},
+		{"0 percent always false", 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := run.InShard(tt.percent)
+			if got != tt.want {
+				t.Errorf("InShard(%d) = %v, want %v", tt.percent, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNormalizeSerial(t *testing.T) {
 	t.Parallel()
 
