@@ -124,3 +124,10 @@ type FirewallOpts struct {
 	State     ResourceState
 	Meta      ResourceMeta
 }
+
+type RebootOpts struct {
+	Reason  string
+	Message string // optional user-facing message shown in converge output before the reboot fires
+	Delay   time.Duration
+	Meta    ResourceMeta
+}

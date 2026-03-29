@@ -139,6 +139,13 @@ func (r *Run) User(name string, opts UserOpts) {
 	r.addResource(newUserExtension(name, opts), opts.Meta)
 }
 
+func (r *Run) Reboot(name string, opts RebootOpts) {
+	if !r.require("Reboot", "name", name) {
+		return
+	}
+	r.addResource(newRebootExtension(name, opts), opts.Meta)
+}
+
 func (r *Run) Firewall(name string, opts FirewallOpts) {
 	if !r.require("Firewall", "name", name) {
 		return

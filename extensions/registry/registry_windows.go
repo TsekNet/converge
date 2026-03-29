@@ -8,12 +8,13 @@ import (
 	"strings"
 
 	"github.com/TsekNet/converge/extensions"
+	"github.com/TsekNet/converge/internal/winreg"
 	"golang.org/x/sys/windows/registry"
 )
 
 // Check opens the registry key read-only and compares the current value against desired.
 func (r *Registry) Check(_ context.Context) (*extensions.State, error) {
-	root, path, err := parseKeyPath(r.Key)
+	root, path, err := winreg.ParseKeyPath(r.Key)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +62,7 @@ func (r *Registry) Check(_ context.Context) (*extensions.State, error) {
 
 // Apply creates the key if needed and writes the value. For "absent" state, deletes the value.
 func (r *Registry) Apply(_ context.Context) (*extensions.Result, error) {
-	root, path, err := parseKeyPath(r.Key)
+	root, path, err := winreg.ParseKeyPath(r.Key)
 	if err != nil {
 		return nil, err
 	}
@@ -156,29 +157,6 @@ func normalizeType(t string) string {
 		return "multistring"
 	default:
 		return s
-	}
-}
-
-// parseKeyPath splits "HKLM\Software\..." into a root handle and subkey path.
-func parseKeyPath(full string) (registry.Key, string, error) {
-	idx := strings.IndexByte(full, '\\')
-	if idx < 0 {
-		return 0, "", fmt.Errorf("invalid registry path %q: missing root", full)
-	}
-	rootStr, path := full[:idx], full[idx+1:]
-	switch strings.ToUpper(rootStr) {
-	case "HKLM", "HKEY_LOCAL_MACHINE":
-		return registry.LOCAL_MACHINE, path, nil
-	case "HKCU", "HKEY_CURRENT_USER":
-		return registry.CURRENT_USER, path, nil
-	case "HKCR", "HKEY_CLASSES_ROOT":
-		return registry.CLASSES_ROOT, path, nil
-	case "HKU", "HKEY_USERS":
-		return registry.USERS, path, nil
-	case "HKCC", "HKEY_CURRENT_CONFIG":
-		return registry.CURRENT_CONFIG, path, nil
-	default:
-		return 0, "", fmt.Errorf("unknown registry root %q", rootStr)
 	}
 }
 

@@ -163,7 +163,7 @@ Some extensions have sub-interfaces for platform-specific implementations:
 |-----------|--------------|-----------------|
 | `pkg/` | `PackageManager` | apt, brew, choco, dnf, yum, zypper, apk, pacman, winget |
 | `service/` | Platform build tags | systemd (Linux), launchd (macOS), SCM (Windows) |
-| `firewall/` | Platform build tags | nftables/netlink (Linux), pf/anchor (macOS), registry API (Windows) |
+| `firewall/` | Platform build tags | nftables/netlink (Linux, IPv4 only), pf/anchor (macOS), registry API (Windows) |
 
 To add a new package manager or init system, implement the sub-interface and register it. The engine doesn't change.
 
@@ -171,7 +171,7 @@ To add a new package manager or init system, implement the sub-interface and reg
 
 ## Directory Structure
 
-Each extension lives in its own subdirectory under `extensions/`. The shared `extension.go` and `state.go` define the interfaces and types: don't modify these. Current extensions: file, exec, firewall, pkg, service, user, registry, secpol, auditpol, sysctl, plist.
+Each extension lives in its own subdirectory under `extensions/`. The shared `extension.go` and `state.go` define the interfaces and types: don't modify these. Current extensions: file, exec, firewall, pkg, reboot, service, user, registry, secpol, auditpol, sysctl, plist.
 
 ---
 
