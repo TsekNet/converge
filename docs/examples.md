@@ -226,7 +226,7 @@ What happens:
 4. When drift is detected, the drifted resource is re-checked and its DAG dependents are re-evaluated
 5. On failure, exponential backoff retries up to `--max-retries` (default 3)
 
-For CI/CD or image baking (Packer), use `--once` to converge and exit:
+For CI/CD or image baking (Packer), use `--timeout` to converge and exit:
 
 ```bash
 # CI pipeline
@@ -865,6 +865,84 @@ r.Firewall("Legacy RDP", dsl.FirewallOpts{
 })
 ```
 
+### Reboot
+
+Schedule a platform-native OS reboot and track whether it has occurred. Available on all platforms.
+
+```go
+r.Reboot(name string, opts dsl.RebootOpts)
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `Reason` | `string` | `""` | Internal reason, written to the sentinel and used in log output. |
+| `Message` | `string` | `""` | User-facing description shown in converge output before the reboot fires (all platforms). |
+| `Delay` | `time.Duration` | `0` | How long before the OS fires the reboot. On Windows, the OS handles the countdown asynchronously (minimum 1s); on Linux/macOS, the daemon waits (context-cancellable). |
+
+| Platform | API |
+|----------|-----|
+| Windows | `InitiateSystemShutdownExW` (advapi32.dll) with `SE_SHUTDOWN_PRIVILEGE` |
+| Linux | `unix.Reboot(LINUX_REBOOT_CMD_RESTART)` |
+| macOS | `unix.Reboot(RB_AUTOBOOT)` + `kern.boottime` via sysctl |
+
+**Idempotency:** Apply writes a second-precision sentinel to `/var/lib/converge/reboot-<name>.sentinel` (Linux/macOS) or `C:\ProgramData\converge\reboot-<name>.sentinel` (Windows) before triggering the reboot. Check compares the sentinel timestamp to the current system boot time (with a 2-second grace window for clock imprecision). If the machine booted after the sentinel was written, Check returns compliant, and the resource is a no-op on all future runs.
+
+**Cancelled reboots:** If a reboot is aborted (e.g., `AbortSystemShutdown` on Windows), the sentinel remains on disk. After 10 minutes without a completed reboot, Apply removes the stale sentinel before writing a fresh one, recovering automatically. To manually recover, delete the sentinel file.
+
+**Daemon continuation:** When converge is registered as a system service (the typical production setup), it starts automatically after the reboot. Resources that depend on the reboot resource proceed once the boot-time comparison passes.
+
+**Examples:**
+
+```go
+// Reboot after installing a kernel module, then gate post-reboot setup
+// on a device node that only appears after the driver loads.
+r.Exec("install-driver", dsl.ExecOpts{
+    Command: "/usr/bin/dkms install mydriver/1.0",
+    OnlyIf:  "test ! -d /sys/module/mydriver",
+})
+r.Reboot("driver-install", dsl.RebootOpts{
+    Reason:  "Kernel module requires reboot to activate",
+    Message: "Rebooting to load newly installed driver.",
+    Delay:   30 * time.Second,
+    Meta:    dsl.ResourceMeta{DependsOn: []string{"exec:install-driver"}},
+})
+r.Exec("configure-driver", dsl.ExecOpts{
+    Command: "/usr/local/bin/configure-driver",
+    Meta: dsl.ResourceMeta{
+        Condition: condition.FileExists("/dev/mydriver0"),
+        DependsOn: []string{"reboot:driver-install"},
+    },
+})
+```
+
+`r.Reboot()` is cross-platform. The `//go:build windows` tag below is required because of `condition.RegistryValueExists`, not because of `r.Reboot()` itself. Pair with registry conditions to gate post-reboot work on state the OS or an installer writes after restart (no polling, uses `RegNotifyChangeKeyValue`):
+
+```go
+//go:build windows
+
+r.Exec("install-agent", dsl.ExecOpts{
+    Command: `C:\installers\agent-setup.exe /quiet`,
+    OnlyIf:  `powershell -NoProfile -Command "!(Test-Path 'C:\Program Files\MyAgent\agent.exe')"`,
+})
+r.Reboot("agent-install", dsl.RebootOpts{
+    Reason:  "Agent installation requires reboot to complete service registration",
+    Message: "This device will restart in 30 seconds to finish agent setup.",
+    Delay:   30 * time.Second,
+    Meta:    dsl.ResourceMeta{DependsOn: []string{"exec:install-agent"}},
+})
+r.Exec("configure-agent", dsl.ExecOpts{
+    Command: `C:\Program Files\MyAgent\agent.exe --configure`,
+    Meta: dsl.ResourceMeta{
+        // Block until the agent's post-reboot registry key appears.
+        Condition: condition.RegistryValueExists(
+            `HKLM\SOFTWARE\MyOrg\Agent`,
+            "InstallComplete",
+        ),
+        DependsOn: []string{"reboot:agent-install"},
+    },
+})
+```
+
 ### InShard
 
 Percentage-based rollout sharding. Not a resource (no Check/Apply), but a DSL helper for conditional logic in blueprints.
@@ -944,7 +1022,7 @@ import "github.com/TsekNet/converge/condition"
 ### NetworkInterface: VPN-gated firewall rules
 
 ```go
-p.Firewall("allow-internal", firewall.Opts{
+r.Firewall("allow-internal", dsl.FirewallOpts{
     Port: 8443, Protocol: "tcp", Action: "allow",
     Meta: dsl.ResourceMeta{
         // Only apply when tun0 (VPN) interface is up.
@@ -956,8 +1034,8 @@ p.Firewall("allow-internal", firewall.Opts{
 ### MountPoint: NFS-backed service
 
 ```go
-p.File("/mnt/nfs/config/app.conf", file.Opts{Content: appConfig})
-p.Service("app", service.Opts{
+r.File("/mnt/nfs/config/app.conf", dsl.FileOpts{Content: appConfig})
+r.Service("app", dsl.ServiceOpts{
     State: dsl.Running,
     Meta: dsl.ResourceMeta{
         // Wait for NFS mount before managing the service.
@@ -970,7 +1048,7 @@ p.Service("app", service.Opts{
 ### FileExists: cert enrollment after bootstrap
 
 ```go
-p.Exec("enroll-cert", exec.Opts{
+r.Exec("enroll-cert", dsl.ExecOpts{
     Command: "/usr/local/bin/enroll",
     Meta: dsl.ResourceMeta{
         // Wait for the CA bundle to be placed by provisioning.
@@ -982,8 +1060,8 @@ p.Exec("enroll-cert", exec.Opts{
 ### NetworkReachable: proxy config before package installs
 
 ```go
-p.File("/etc/apt/apt.conf.d/99proxy", file.Opts{Content: proxyConf})
-p.Package("curl", pkg.Opts{
+r.File("/etc/apt/apt.conf.d/99proxy", dsl.FileOpts{Content: proxyConf})
+r.Package("curl", dsl.PackageOpts{
     State: dsl.Present,
     Meta: dsl.ResourceMeta{
         // Only install packages once the proxy is reachable.
@@ -993,12 +1071,64 @@ p.Package("curl", pkg.Opts{
 })
 ```
 
+### RegistryKeyExists / RegistryValueExists / RegistryValueEquals (Windows only)
+
+Gate convergence on Windows registry state. Uses `RegNotifyChangeKeyValue` so no polling occurs while waiting.
+
+```go
+//go:build windows
+
+// Gate on key existence (any subkey or value creation under this path)
+r.Exec("post-install-step", dsl.ExecOpts{
+    Command: `C:\Program Files\MyApp\setup.exe --post-install`,
+    Meta: dsl.ResourceMeta{
+        Condition: condition.RegistryKeyExists(`HKLM\SOFTWARE\MyOrg\MyApp`),
+    },
+})
+
+// Gate on a specific value existing under a key
+r.File(`C:\ProgramData\MyApp\config.json`, dsl.FileOpts{
+    Content: `{"mode": "managed"}`,
+    Meta: dsl.ResourceMeta{
+        Condition: condition.RegistryValueExists(
+            `HKLM\SOFTWARE\MyOrg\MyApp`,
+            "SetupComplete",
+        ),
+    },
+})
+
+// Gate on a value equaling a specific string or integer
+r.Exec("activate-feature", dsl.ExecOpts{
+    Command: `C:\Program Files\MyApp\activate.exe`,
+    Meta: dsl.ResourceMeta{
+        Condition: condition.RegistryValueEquals(
+            `HKLM\SOFTWARE\MyOrg\MyApp`,
+            "LicenseState",
+            "active",
+        ),
+    },
+})
+```
+
+All three constructors return `*registryCondition`, which implements `extensions.Condition`. They are available only in `//go:build windows` blueprint files.
+
+| Constructor | Satisfied when |
+|---|---|
+| `RegistryKeyExists(key)` | The registry key exists (regardless of values) |
+| `RegistryValueExists(key, value)` | The named value exists under key |
+| `RegistryValueEquals(key, value, data)` | The named value exists and its data equals `fmt.Sprintf("%v", data)` |
+
+If the target key does not yet exist, `Wait` walks up the key path to find the nearest existing ancestor and watches the subtree with `bWatchSubtree=true`.
+
 ### Available conditions
 
-| Constructor | Satisfied when | Wait mechanism |
-|---|---|---|
-| `condition.NetworkInterface(name)` | Named interface exists and is up | netlink RTMGRP_LINK (Linux), NotifyIpInterfaceChange (Windows), 2s poll (macOS) |
-| `condition.NetworkReachable(host, port)` | TCP connect to host:port succeeds | 5s poll (no kernel event for TCP reachability) |
-| `condition.MountPoint(path)` | path is on a different device than its parent | inotify on /proc/self/mountinfo (Linux), kqueue on / (macOS), 5s poll (Windows) |
-| `condition.FileExists(path)` | os.Stat(path) succeeds | inotify on parent dir (Linux), kqueue on parent (macOS), ReadDirectoryChangesW (Windows) |
+| Constructor | Platform | Satisfied when | Wait mechanism |
+|---|---|---|---|
+| `condition.NetworkInterface(name)` | All | Named interface exists and is up | netlink RTMGRP_LINK (Linux), NotifyIpInterfaceChange (Windows), 2s poll (macOS) |
+| `condition.NetworkReachable(host, port)` | All | TCP connect to host:port succeeds | 5s poll (no kernel event for TCP reachability) |
+| `condition.MountPoint(path)` | All | path is on a different device than its parent | inotify on /proc/self/mountinfo (Linux), kqueue on / (macOS), 5s poll (Windows) |
+| `condition.FileExists(path)` | All | `os.Stat(path)` succeeds | inotify on parent dir (Linux), kqueue on parent (macOS), ReadDirectoryChangesW (Windows) |
+| `condition.RegistryKeyExists(key)` | Windows | Registry key exists | RegNotifyChangeKeyValue on nearest existing ancestor |
+| `condition.RegistryValueExists(key, value)` | Windows | Named value exists under key | RegNotifyChangeKeyValue on nearest existing ancestor |
+| `condition.RegistryValueEquals(key, value, data)` | Windows | Named value's data equals the string form of data | RegNotifyChangeKeyValue on nearest existing ancestor |
 

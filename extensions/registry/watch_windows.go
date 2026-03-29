@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/TsekNet/converge/extensions"
+	cwinreg "github.com/TsekNet/converge/internal/winreg"
 	"golang.org/x/sys/windows"
 	winreg "golang.org/x/sys/windows/registry"
 )
@@ -15,7 +16,7 @@ import (
 // Watch uses RegNotifyChangeKeyValue to monitor the registry key for
 // value changes on Windows.
 func (r *Registry) Watch(ctx context.Context, events chan<- extensions.Event) error {
-	root, subkey, err := parseKeyPath(r.Key)
+	root, subkey, err := cwinreg.ParseKeyPath(r.Key)
 	if err != nil {
 		return err
 	}

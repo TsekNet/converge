@@ -1,6 +1,6 @@
 ---
 name: platform-reviewer
-description: "Use when changes touch platform-specific code (_windows.go, _darwin.go, _linux.go), internal/platform/, internal/watch/, or extensions with OS-specific implementations. Verifies all three OS implementations stay in sync."
+description: "Use when changes touch platform-specific code (_windows.go, _darwin.go, _linux.go), internal/platform/, internal/watch/, condition/*_windows.go, or extensions with OS-specific implementations. Verifies all three OS implementations stay in sync."
 model: opus
 ---
 

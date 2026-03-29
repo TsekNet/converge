@@ -110,12 +110,12 @@ One error handling pattern (the `Critical` flag). One way to include shared logi
 
 ## Convergent Model
 
-The fundamental abstraction is the **resource**, implementing two methods:
+The fundamental abstraction is the **resource**, implementing two methods (simplified from the actual `Extension` interface in `extensions/extension.go`):
 
 ```go
-type Resource interface {
-    Check(ctx Context) (State, error)
-    Apply(ctx Context) error
+type Extension interface {
+    Check(ctx context.Context) (*State, error)
+    Apply(ctx context.Context) (*Result, error)
 }
 ```
 
@@ -139,7 +139,7 @@ type Resource interface {
 | Package | Description |
 |---------|-------------|
 | `dsl/` | Public SDK: blueprint types, opts structs, resource methods, shard/config helpers |
-| `extensions/` | Resource implementations: file, exec, firewall, pkg, service, user, registry, secpol, auditpol, sysctl, plist |
+| `extensions/` | Resource implementations: file, exec, firewall, pkg, reboot, service, user, registry, secpol, auditpol, sysctl, plist |
 | `internal/` | Engine, DAG graph, daemon, auto-edges, exit codes, platform detection, output, logging |
 | `cmd/converge/` | Cobra CLI entry point, blueprint registration |
 | `blueprints/` | Built-in blueprints: baseline, linux, darwin, windows, CIS L1 |
@@ -270,7 +270,7 @@ flowchart TD
 
 **Key behaviors:**
 
-- **Condition gates.** Resources with a `Condition` set in `ResourceMeta` are skipped until the condition is met. The daemon waits using OS-native events (netlink, inotify, NotifyIpInterfaceChange) and triggers initial convergence the moment the condition becomes true. See the `condition` package.
+- **Condition gates.** Resources with a `Condition` set in `ResourceMeta` are skipped until the condition is met. The daemon waits using OS-native events (netlink, inotify, NotifyIpInterfaceChange, RegNotifyChangeKeyValue) and triggers initial convergence the moment the condition becomes true. See the `condition` package.
 - **Event-driven, not polling.** Resources implementing `Watcher` (File via inotify, Service via dbus) block on OS-level events. Near-zero CPU at idle.
 - **DAG propagation.** When a resource changes, its downstream dependents in the DAG are automatically re-checked. This is what Chef, Puppet, and Ansible lack entirely.
 - **Polling fallback.** Resources without native OS events (Package, Exec) are polled at configurable intervals.

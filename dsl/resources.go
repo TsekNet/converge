@@ -6,6 +6,7 @@ import (
 	extfile "github.com/TsekNet/converge/extensions/file"
 	extfw "github.com/TsekNet/converge/extensions/firewall"
 	extpkg "github.com/TsekNet/converge/extensions/pkg"
+	extreboot "github.com/TsekNet/converge/extensions/reboot"
 	extsvc "github.com/TsekNet/converge/extensions/service"
 	extuser "github.com/TsekNet/converge/extensions/user"
 )
@@ -49,6 +50,15 @@ func newUserExtension(name string, opts UserOpts) extensions.Extension {
 	u.System = opts.System
 	u.Critical = opts.Meta.Critical
 	return u
+}
+
+func newRebootExtension(name string, opts RebootOpts) extensions.Extension {
+	rb := extreboot.New(name)
+	rb.Reason = opts.Reason
+	rb.Message = opts.Message
+	rb.Delay = opts.Delay
+	rb.Critical = opts.Meta.Critical
+	return rb
 }
 
 func newFirewallExtension(name string, opts FirewallOpts) extensions.Extension {

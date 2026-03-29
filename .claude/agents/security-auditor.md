@@ -1,6 +1,6 @@
 ---
 name: security-auditor
-description: "Use when changes touch extensions/exec/ (command execution), dsl/config.go (AES-256-GCM secret decryption), extensions/registry/ (Windows registry), extensions/secpol/, extensions/auditpol/, or the Extension interface. Reviews for command injection, secret handling, and privilege escalation."
+description: "Use when changes touch extensions/exec/ (command execution), dsl/config.go (AES-256-GCM secret decryption), extensions/registry/ (Windows registry), extensions/secpol/, extensions/auditpol/, condition/ (conditions open sockets and registry handles), or the Extension interface. Reviews for command injection, secret handling, and privilege escalation."
 model: opus
 ---
 
